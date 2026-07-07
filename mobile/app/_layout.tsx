@@ -1,10 +1,20 @@
 import { useEffect } from 'react'
+import { LogBox } from 'react-native'
 import { Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { ensureSession } from '@/lib/auth'
 import { useSession } from '@/hooks/useSession'
 import { configurePurchases, loginPurchases } from '@/lib/purchases'
+
+if (__DEV__) {
+  // Supabase's own background token-refresh timer (runs every ~30s for the
+  // life of the app) already catches its own failures and logs this as a
+  // known-transient console.error — it retries on the next tick regardless.
+  // Without this it pops a full-screen LogBox error on every blip in the
+  // simulator's network, which isn't actionable from application code.
+  LogBox.ignoreLogs(['Auto refresh tick failed with error'])
+}
 
 export default function RootLayout() {
   const { session } = useSession()

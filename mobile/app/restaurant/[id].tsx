@@ -41,8 +41,11 @@ export default function RestaurantDetail() {
   const [googleRating, setGoogleRating] = useState<number | null>(null)
   const [googleRatingCount, setGoogleRatingCount] = useState<number | null>(null)
   const [hours, setHours] = useState<OpeningHours | null>(null)
+  const [loadError, setLoadError] = useState(false)
 
-  useEffect(() => {
+  const load = () => {
+    setLoading(true)
+    setLoadError(false)
     ;(async () => {
       try {
         const [p, r, mine] = await Promise.all([getRestaurant(id), getReviews(id), getMyReview(id)])
@@ -52,11 +55,15 @@ export default function RestaurantDetail() {
         setGoogleRating(p?.google_rating ?? null)
         setGoogleRatingCount(p?.google_rating_count ?? null)
         setHours(p?.hours_cache ?? null)
+      } catch {
+        setLoadError(true)
       } finally {
         setLoading(false)
       }
     })()
-  }, [id])
+  }
+
+  useEffect(load, [id])
 
   // Fire-and-forget: refreshes Google rating + hours in the background (the
   // server no-ops if its own cache is still fresh, so this is cheap to call
@@ -74,6 +81,17 @@ export default function RestaurantDetail() {
     return (
       <View style={[styles.center, { backgroundColor: c.bg }]}>
         <ActivityIndicator color={c.primary} />
+      </View>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <View style={[styles.center, { backgroundColor: c.bg }]}>
+        <Text style={{ color: c.subtext }}>Couldn’t load this place. Check your connection.</Text>
+        <Pressable style={[styles.retryBtn, { backgroundColor: c.primary }]} onPress={load}>
+          <Text style={styles.ctaText}>Retry</Text>
+        </Pressable>
       </View>
     )
   }
@@ -319,6 +337,7 @@ export default function RestaurantDetail() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  retryBtn: { marginTop: 16, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 14 },
   back: { paddingHorizontal: 12, paddingVertical: 6 },
   head: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 12 },
   type: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8 },

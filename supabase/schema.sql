@@ -140,6 +140,22 @@ create policy list_items_owner_all on public.list_items
   );
 
 -- ---------------------------------------------------------------------------
+-- User blocks (defined before reviews: the reviews read policy references it)
+-- ---------------------------------------------------------------------------
+create table if not exists public.user_blocks (
+  blocker_id  uuid not null references auth.users(id) on delete cascade,
+  blocked_id  uuid not null references auth.users(id) on delete cascade,
+  created_at  timestamptz not null default now(),
+  primary key (blocker_id, blocked_id)
+);
+
+alter table public.user_blocks enable row level security;
+
+drop policy if exists user_blocks_owner_all on public.user_blocks;
+create policy user_blocks_owner_all on public.user_blocks
+  for all using (auth.uid() = blocker_id) with check (auth.uid() = blocker_id);
+
+-- ---------------------------------------------------------------------------
 -- Reviews (text-only, account-backed, optionally displayed anonymously)
 -- ---------------------------------------------------------------------------
 create table if not exists public.reviews (
@@ -238,22 +254,6 @@ drop trigger if exists on_review_reported on public.review_reports;
 create trigger on_review_reported
   after insert on public.review_reports
   for each row execute function public.auto_hide_reported_review();
-
--- ---------------------------------------------------------------------------
--- User blocks
--- ---------------------------------------------------------------------------
-create table if not exists public.user_blocks (
-  blocker_id  uuid not null references auth.users(id) on delete cascade,
-  blocked_id  uuid not null references auth.users(id) on delete cascade,
-  created_at  timestamptz not null default now(),
-  primary key (blocker_id, blocked_id)
-);
-
-alter table public.user_blocks enable row level security;
-
-drop policy if exists user_blocks_owner_all on public.user_blocks;
-create policy user_blocks_owner_all on public.user_blocks
-  for all using (auth.uid() = blocker_id) with check (auth.uid() = blocker_id);
 
 -- ---------------------------------------------------------------------------
 -- Push tokens

@@ -31,6 +31,6 @@
       "expo-location",
       "expo-notifications"
     ],
-    "experiments": { "typedRoutes": true }
+    "experiments": { "typedRoutes": false }
   }
 }

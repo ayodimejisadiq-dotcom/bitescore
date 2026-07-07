@@ -1,0 +1,130 @@
+import { useEffect, useRef, useState } from 'react'
+import {
+  View,
+  Text,
+  TextInput,
+  FlatList,
+  StyleSheet,
+  ActivityIndicator,
+} from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
+import * as Location from 'expo-location'
+import { useRouter } from 'expo-router'
+import { useTheme } from '@/theme/useTheme'
+import { RestaurantRow } from '@/components/RestaurantRow'
+import { fetchNear, searchRestaurants } from '@/lib/data'
+import { EMPTY_FILTERS, type RestaurantNear } from '@/lib/types'
+
+export default function SearchScreen() {
+  const c = useTheme()
+  const router = useRouter()
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<RestaurantNear[]>([])
+  const [loading, setLoading] = useState(false)
+  const [nearbyMode, setNearbyMode] = useState(true)
+  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Empty query → show places near the user.
+  useEffect(() => {
+    ;(async () => {
+      setLoading(true)
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync()
+        if (status !== 'granted') return
+        const pos = await Location.getCurrentPositionAsync({})
+        setResults(
+          await fetchNear(
+            { lng: pos.coords.longitude, lat: pos.coords.latitude },
+            2000,
+            EMPTY_FILTERS,
+          ),
+        )
+      } catch {
+        /* leave empty */
+      } finally {
+        setLoading(false)
+      }
+    })()
+  }, [])
+
+  const onChange = (text: string) => {
+    setQuery(text)
+    if (debounce.current) clearTimeout(debounce.current)
+    if (!text.trim()) {
+      setNearbyMode(true)
+      return
+    }
+    setNearbyMode(false)
+    debounce.current = setTimeout(async () => {
+      setLoading(true)
+      try {
+        setResults(await searchRestaurants(text))
+      } catch {
+        /* leave */
+      } finally {
+        setLoading(false)
+      }
+    }, 300)
+  }
+
+  return (
+    <SafeAreaView edges={['top']} style={[styles.root, { backgroundColor: c.bg }]}>
+      <View style={styles.head}>
+        <TextInput
+          value={query}
+          onChangeText={onChange}
+          placeholder="Search places or a postcode"
+          placeholderTextColor={c.subtext}
+          autoCapitalize="none"
+          autoCorrect={false}
+          style={[styles.input, { backgroundColor: c.card, color: c.text, borderColor: c.border }]}
+        />
+      </View>
+      {loading ? (
+        <ActivityIndicator style={{ marginTop: 24 }} color={c.primary} />
+      ) : (
+        <FlatList
+          data={results}
+          keyExtractor={(item) => item.id}
+          ListHeaderComponent={
+            <Text style={[styles.section, { color: c.subtext }]}>
+              {nearbyMode ? 'Near you' : `Results for “${query.trim()}”`}
+            </Text>
+          }
+          ListEmptyComponent={
+            <Text style={[styles.empty, { color: c.subtext }]}>
+              {nearbyMode
+                ? 'Turn on location, or search by name or postcode.'
+                : 'No matches. Try a different spelling or a postcode.'}
+            </Text>
+          }
+          renderItem={({ item }) => (
+            <RestaurantRow item={item} onPress={() => router.push(`/restaurant/${item.id}`)} />
+          )}
+        />
+      )}
+    </SafeAreaView>
+  )
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+  head: { paddingHorizontal: 14, paddingTop: 6, paddingBottom: 8 },
+  input: {
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16,
+  },
+  section: {
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  empty: { textAlign: 'center', marginTop: 40, paddingHorizontal: 40, fontSize: 15, lineHeight: 22 },
+})

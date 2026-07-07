@@ -116,6 +116,95 @@ export async function getReviews(restaurantId: string): Promise<Review[]> {
   return (data ?? []) as Review[]
 }
 
+// The current user's own review for this restaurant, if any — used to show
+// "Edit your review" instead of "Write a review", and to prefill the composer.
+export async function getMyReview(restaurantId: string): Promise<Review | null> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return null
+  const { data, error } = await supabase
+    .from('reviews')
+    .select('*')
+    .eq('restaurant_id', restaurantId)
+    .eq('user_id', user.id)
+    .maybeSingle()
+  if (error) throw error
+  return (data as Review) ?? null
+}
+
+// Creates or replaces the current user's review for this restaurant (one
+// review per user per place — see migration 0010). Non-anonymous reviews
+// snapshot the current username so a later name change doesn't rewrite history.
+export async function submitReview({
+  restaurantId,
+  body,
+  isAnonymous,
+}: {
+  restaurantId: string
+  body: string
+  isAnonymous: boolean
+}): Promise<Review> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not signed in')
+
+  const displayNameSnapshot = isAnonymous ? null : ((await getProfile())?.username ?? null)
+
+  const { data, error } = await supabase
+    .from('reviews')
+    .upsert(
+      {
+        restaurant_id: restaurantId,
+        user_id: user.id,
+        body,
+        is_anonymous: isAnonymous,
+        display_name_snapshot: displayNameSnapshot,
+        status: 'visible',
+      },
+      { onConflict: 'user_id,restaurant_id' },
+    )
+    .select('*')
+    .single()
+  if (error) throw error
+  return data as Review
+}
+
+export async function deleteReview(reviewId: string): Promise<void> {
+  const { error } = await supabase.from('reviews').delete().eq('id', reviewId)
+  if (error) throw error
+}
+
+// Flags a review for moderation. Reporting the same review twice is a no-op
+// (unique constraint on review_reports) — surfaced to the caller so the UI
+// can tell the user they've already reported it.
+export async function reportReview(reviewId: string): Promise<{ alreadyReported: boolean }> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not signed in')
+  const { error } = await supabase.from('review_reports').insert({ review_id: reviewId, reporter_id: user.id })
+  if (error) {
+    if (error.code === '23505') return { alreadyReported: true }
+    throw error
+  }
+  return { alreadyReported: false }
+}
+
+// Hides this user's reviews from the current user going forward (RLS on
+// `reviews` excludes blocked authors from reviews_read_visible).
+export async function blockUser(userId: string): Promise<void> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not signed in')
+  const { error } = await supabase
+    .from('user_blocks')
+    .upsert({ blocker_id: user.id, blocked_id: userId }, { onConflict: 'blocker_id,blocked_id' })
+  if (error) throw error
+}
+
 // ---------------------------------------------------------------------------
 // Lists
 // ---------------------------------------------------------------------------

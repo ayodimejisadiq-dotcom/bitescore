@@ -14,8 +14,16 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useTheme } from '@/theme/useTheme'
 import { ScoreBadge } from '@/components/ScoreBadge'
 import { SaveToListModal } from '@/components/SaveToListModal'
+import { ReviewComposer } from '@/components/ReviewComposer'
 import { FSA_ATTRIBUTION, BUSINESS_TYPE_LABEL, ratingDescription, inspectionStatusLine } from '@/lib/fsa'
-import { getRestaurant, getReviews, lookupPlaceData } from '@/lib/data'
+import {
+  getRestaurant,
+  getReviews,
+  getMyReview,
+  lookupPlaceData,
+  reportReview,
+  blockUser,
+} from '@/lib/data'
 import type { OpeningHours, Restaurant, Review } from '@/lib/types'
 
 export default function RestaurantDetail() {
@@ -24,8 +32,10 @@ export default function RestaurantDetail() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const [place, setPlace] = useState<Restaurant | null>(null)
   const [reviews, setReviews] = useState<Review[]>([])
+  const [myReview, setMyReview] = useState<Review | null>(null)
   const [loading, setLoading] = useState(true)
   const [saveOpen, setSaveOpen] = useState(false)
+  const [composerOpen, setComposerOpen] = useState(false)
   const [googleRating, setGoogleRating] = useState<number | null>(null)
   const [googleRatingCount, setGoogleRatingCount] = useState<number | null>(null)
   const [hours, setHours] = useState<OpeningHours | null>(null)
@@ -33,9 +43,10 @@ export default function RestaurantDetail() {
   useEffect(() => {
     ;(async () => {
       try {
-        const [p, r] = await Promise.all([getRestaurant(id), getReviews(id)])
+        const [p, r, mine] = await Promise.all([getRestaurant(id), getReviews(id), getMyReview(id)])
         setPlace(p)
         setReviews(r)
+        setMyReview(mine)
         setGoogleRating(p?.google_rating ?? null)
         setGoogleRatingCount(p?.google_rating_count ?? null)
         setHours(p?.hours_cache ?? null)
@@ -76,8 +87,50 @@ export default function RestaurantDetail() {
   const hoursLines = hours?.weekday_text
   const openNow = hours?.open_now
 
-  const onSubmitReview = () => {
-    Alert.alert('Coming soon', 'Writing reviews arrives in the next update.')
+  const onReportReview = (reviewId: string) => {
+    Alert.alert('Report this review?', 'We’ll take a look and hide it if others agree.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Report',
+        onPress: async () => {
+          try {
+            const { alreadyReported } = await reportReview(reviewId)
+            Alert.alert(
+              alreadyReported ? 'Already reported' : 'Reported',
+              alreadyReported ? 'You already reported this review.' : 'Thanks — we’ll take a look.',
+            )
+          } catch {
+            Alert.alert('Couldn’t report', 'Check your connection and try again.')
+          }
+        },
+      },
+    ])
+  }
+
+  const onBlockUser = (userId: string) => {
+    Alert.alert('Block this reviewer?', 'You won’t see their reviews anymore.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Block',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await blockUser(userId)
+            setReviews(await getReviews(id))
+          } catch {
+            Alert.alert('Couldn’t block', 'Check your connection and try again.')
+          }
+        },
+      },
+    ])
+  }
+
+  const onReviewOptions = (review: Review) => {
+    Alert.alert('Review options', undefined, [
+      { text: 'Report review', onPress: () => onReportReview(review.id) },
+      { text: 'Block this reviewer', style: 'destructive', onPress: () => onBlockUser(review.user_id) },
+      { text: 'Cancel', style: 'cancel' },
+    ])
   }
 
   return (
@@ -130,15 +183,9 @@ export default function RestaurantDetail() {
           <View style={[styles.ratingsDivider, { backgroundColor: c.border }]} />
           <View style={styles.ratingsCol}>
             <Text style={[styles.k, { color: c.subtext }]}>Bitescore</Text>
-            {reviews.length === 0 ? (
-              <Pressable onPress={onSubmitReview}>
-                <Text style={[styles.v, { color: c.primary }]}>Pending — submit the first review</Text>
-              </Pressable>
-            ) : (
-              <Text style={[styles.v, { color: c.text }]}>
-                {reviews.length} review{reviews.length === 1 ? '' : 's'}
-              </Text>
-            )}
+            <Text style={[styles.v, { color: c.text }]}>
+              {reviews.length === 0 ? 'No reviews yet' : `${reviews.length} review${reviews.length === 1 ? '' : 's'}`}
+            </Text>
           </View>
         </View>
         {googleRating !== null ? (
@@ -171,7 +218,14 @@ export default function RestaurantDetail() {
         ) : null}
 
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: c.subtext }]}>Reviews</Text>
+          <View style={styles.sectionHeadRow}>
+            <Text style={[styles.sectionTitle, { color: c.subtext }]}>Reviews</Text>
+            <Pressable onPress={() => setComposerOpen(true)} hitSlop={8}>
+              <Text style={[styles.writeReview, { color: c.primary }]}>
+                {myReview ? 'Edit your review' : 'Write a review'}
+              </Text>
+            </Pressable>
+          </View>
           {reviews.length === 0 ? (
             <Text style={[styles.noReviews, { color: c.subtext }]}>
               No reviews yet. Be the first to add one.
@@ -179,9 +233,16 @@ export default function RestaurantDetail() {
           ) : (
             reviews.map((r) => (
               <View key={r.id} style={[styles.rev, { borderTopColor: c.border }]}>
-                <Text style={[styles.who, { color: c.text }]}>
-                  {r.is_anonymous ? 'Anonymous' : r.display_name_snapshot ?? 'Someone'}
-                </Text>
+                <View style={styles.revHeadRow}>
+                  <Text style={[styles.who, { color: c.text }]}>
+                    {r.is_anonymous ? 'Anonymous' : r.display_name_snapshot ?? 'Someone'}
+                  </Text>
+                  {r.id !== myReview?.id ? (
+                    <Pressable onPress={() => onReviewOptions(r)} hitSlop={10}>
+                      <Ionicons name="ellipsis-horizontal" size={16} color={c.subtext} />
+                    </Pressable>
+                  ) : null}
+                </View>
                 <Text style={[styles.revText, { color: c.subtext }]}>{r.body}</Text>
               </View>
             ))
@@ -199,6 +260,28 @@ export default function RestaurantDetail() {
       </View>
 
       <SaveToListModal visible={saveOpen} restaurantId={id} onClose={() => setSaveOpen(false)} />
+
+      <ReviewComposer
+        visible={composerOpen}
+        restaurantId={id}
+        existingReview={myReview}
+        onClose={() => setComposerOpen(false)}
+        onSaved={(review) => {
+          setMyReview(review)
+          setReviews((prev) => {
+            const others = prev.filter((r) => r.id !== review.id)
+            return [review, ...others].sort(
+              (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+            )
+          })
+          setComposerOpen(false)
+        }}
+        onDeleted={() => {
+          setReviews((prev) => prev.filter((r) => r.id !== myReview?.id))
+          setMyReview(null)
+          setComposerOpen(false)
+        }}
+      />
     </SafeAreaView>
   )
 }
@@ -250,9 +333,12 @@ const styles = StyleSheet.create({
   },
   hoursLine: { fontSize: 13.5 },
   section: { paddingHorizontal: 20, marginTop: 22 },
+  sectionHeadRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionTitle: { fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8 },
+  writeReview: { fontSize: 13, fontWeight: '700' },
   noReviews: { fontSize: 14, marginTop: 10, lineHeight: 20 },
   rev: { borderTopWidth: StyleSheet.hairlineWidth, paddingVertical: 12 },
+  revHeadRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   who: { fontSize: 14, fontWeight: '700' },
   revText: { fontSize: 14, marginTop: 3, lineHeight: 20 },
   attrib: { fontSize: 11, lineHeight: 16, paddingHorizontal: 20, marginTop: 26 },

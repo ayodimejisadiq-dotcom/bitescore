@@ -7,10 +7,16 @@ export function useSession(): { session: Session | null; loading: boolean } {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-      setLoading(false)
-    })
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        setSession(data.session)
+      })
+      .catch(() => {
+        // No network on first launch, etc. — session stays null; ensureSession
+        // (called separately at app startup) retries establishing one.
+      })
+      .finally(() => setLoading(false))
     const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
       setSession(next)
     })

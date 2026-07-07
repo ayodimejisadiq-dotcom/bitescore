@@ -30,9 +30,9 @@ export async function fetchPins(
     min_lat: bounds.minLat,
     max_lng: bounds.maxLng,
     max_lat: bounds.maxLat,
-    min_rating: filters.minRating,
+    min_rating: typeof filters.minRating === 'number' ? filters.minRating : null,
     types: filters.types,
-    hide_awaiting_inspection: filters.hideAwaitingInspection,
+    only_awaiting: filters.minRating === 'awaiting',
   })
   if (error) throw error
   return (data ?? []) as RestaurantPin[]
@@ -48,9 +48,9 @@ export async function fetchNear(
     origin_lng: origin.lng,
     origin_lat: origin.lat,
     radius_m: radiusM,
-    min_rating: filters.minRating,
+    min_rating: typeof filters.minRating === 'number' ? filters.minRating : null,
     types: filters.types,
-    hide_awaiting_inspection: filters.hideAwaitingInspection,
+    only_awaiting: filters.minRating === 'awaiting',
   })
   if (error) throw error
   return (data ?? []) as RestaurantNear[]
@@ -74,14 +74,13 @@ export async function searchRestaurants(
     ? builder.ilike('postcode', `${q}%`)
     : builder.ilike('name', `%${q}%`)
 
-  if (filters.minRating !== null) {
+  if (filters.minRating === 'awaiting') {
+    builder = builder.eq('rating_value', 'AwaitingInspection')
+  } else if (typeof filters.minRating === 'number') {
     builder = builder.eq('rating_is_numeric', true).gte('rating_value', String(filters.minRating))
   }
   if (filters.types && filters.types.length) {
     builder = builder.in('business_type', filters.types)
-  }
-  if (filters.hideAwaitingInspection) {
-    builder = builder.neq('rating_value', 'AwaitingInspection')
   }
 
   const { data, error } = await builder

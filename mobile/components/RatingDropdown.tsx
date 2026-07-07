@@ -2,27 +2,38 @@ import { useState } from 'react'
 import { View, Text, Pressable, Modal, StyleSheet } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/theme/useTheme'
-import { greyToGreen } from '@/theme/colors'
+import { greyToGreen, NEUTRAL_RATING } from '@/theme/colors'
+import type { RatingFilter } from '@/lib/types'
 
 // "Any rating" (null) shows everything, including non-numeric FSA statuses
 // (Exempt / Awaiting). Picking 0–5 filters to numeric ratings >= that value —
-// 0 is a real, selectable choice, distinct from "Any".
-const STEPS: (number | null)[] = [null, 5, 4, 3, 2, 1, 0]
+// 0 is a real, selectable choice, distinct from "Any". 'awaiting' is its own
+// tier: places registered but never inspected, shown to the exclusion of
+// everything else (same one-tap, mutually-exclusive behavior as the rest).
+const STEPS: RatingFilter[] = [null, 5, 4, 3, 2, 1, 0, 'awaiting']
 
-function labelFor(v: number | null): string {
-  return v === null ? 'Any rating' : `${v}+ rated`
+function labelFor(v: RatingFilter): string {
+  if (v === null) return 'Any rating'
+  if (v === 'awaiting') return 'Awaiting'
+  return `${v}+ rated`
+}
+
+function colorFor(v: RatingFilter, c: ReturnType<typeof useTheme>): string {
+  if (v === null) return c.border
+  if (v === 'awaiting') return NEUTRAL_RATING
+  return greyToGreen(v)
 }
 
 export function RatingDropdown({
   value,
   onChange,
 }: {
-  value: number | null
-  onChange: (next: number | null) => void
+  value: RatingFilter
+  onChange: (next: RatingFilter) => void
 }) {
   const c = useTheme()
   const [open, setOpen] = useState(false)
-  const swatch = value === null ? c.border : greyToGreen(value)
+  const swatch = colorFor(value, c)
 
   return (
     <>
@@ -42,7 +53,7 @@ export function RatingDropdown({
             <Text style={[styles.title, { color: c.subtext }]}>Minimum hygiene rating</Text>
             {STEPS.map((step) => {
               const active = step === value
-              const color = step === null ? c.border : greyToGreen(step)
+              const color = colorFor(step, c)
               return (
                 <Pressable
                   key={String(step)}
@@ -53,7 +64,11 @@ export function RatingDropdown({
                   style={styles.row}
                 >
                   <View style={[styles.swatch, { backgroundColor: color }]}>
-                    {step !== null ? <Text style={styles.swatchText}>{step}</Text> : null}
+                    {typeof step === 'number' ? (
+                      <Text style={styles.swatchText}>{step}</Text>
+                    ) : step === 'awaiting' ? (
+                      <Ionicons name="hourglass-outline" size={13} color="#fff" />
+                    ) : null}
                   </View>
                   <Text style={[styles.rowLabel, { color: c.text }]}>{labelFor(step)}</Text>
                   {active ? (

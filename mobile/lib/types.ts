@@ -65,16 +65,19 @@ export interface Review {
   created_at: string
 }
 
+// null = any rating (includes Awaiting/Exempt/etc), a number = numeric
+// rating >= this (excludes all non-numeric statuses), 'awaiting' = show only
+// places registered but never inspected. Mutually exclusive, same dropdown.
+export type RatingFilter = number | 'awaiting' | null
+
 export interface BrowseFilters {
-  minRating: number | null // numeric rating >= this
+  minRating: RatingFilter
   types: string[] | null // FSA business_type filter
-  hideAwaitingInspection: boolean // exclude registered-but-never-inspected places
 }
 
 export const EMPTY_FILTERS: BrowseFilters = {
   minRating: null,
   types: null,
-  hideAwaitingInspection: false,
 }
 
 export interface ListItemRestaurant {

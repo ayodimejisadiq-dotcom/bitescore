@@ -17,6 +17,7 @@ import { useTheme } from '@/theme/useTheme'
 import { useSession } from '@/hooks/useSession'
 import { ScoreBadge } from '@/components/ScoreBadge'
 import { fetchMyLists, createList, renameList, deleteList } from '@/lib/data'
+import { errorMessage } from '@/lib/errors'
 import type { ListWithItems } from '@/lib/types'
 
 export default function ListsScreen() {
@@ -36,7 +37,7 @@ export default function ListsScreen() {
     try {
       setLists(await fetchMyLists())
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(errorMessage(e))
     } finally {
       setLoading(false)
     }
@@ -61,7 +62,7 @@ export default function ListsScreen() {
       setEditing(null)
       load()
     } catch (e) {
-      Alert.alert(editing.id ? 'Couldn’t rename' : 'Couldn’t create list', e instanceof Error ? e.message : String(e))
+      Alert.alert(editing.id ? 'Couldn’t rename' : 'Couldn’t create list', errorMessage(e))
     }
   }
 
@@ -76,7 +77,7 @@ export default function ListsScreen() {
             await deleteList(list.id)
             load()
           } catch (e) {
-            Alert.alert('Couldn’t delete', e instanceof Error ? e.message : String(e))
+            Alert.alert('Couldn’t delete', errorMessage(e))
           }
         },
       },

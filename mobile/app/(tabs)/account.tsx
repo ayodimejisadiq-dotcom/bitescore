@@ -19,6 +19,7 @@ import { useSession } from '@/hooks/useSession'
 import { sendLoginCode, verifyLoginCode, signOut, updateDisplayName, deleteMyAccount } from '@/lib/auth'
 import { getNotificationPrefs, setNotificationPrefs } from '@/lib/data'
 import { registerForPushNotifications } from '@/lib/push'
+import { errorMessage } from '@/lib/errors'
 import { supabase } from '@/lib/supabase'
 
 export default function AccountScreen() {
@@ -56,7 +57,7 @@ function SignedOut() {
       await sendLoginCode(email)
       setStage('code')
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(errorMessage(e))
     } finally {
       setBusy(false)
     }
@@ -70,7 +71,7 @@ function SignedOut() {
       await verifyLoginCode(email, code)
       // useSession picks up the new session automatically via onAuthStateChange.
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(errorMessage(e))
     } finally {
       setBusy(false)
     }
@@ -182,7 +183,7 @@ function SignedIn() {
       await updateDisplayName(displayName)
       Alert.alert('Saved', 'Your display name has been updated.')
     } catch (e) {
-      Alert.alert('Couldn’t save', e instanceof Error ? e.message : String(e))
+      Alert.alert('Couldn’t save', errorMessage(e))
     } finally {
       setSavingName(false)
     }
@@ -204,7 +205,7 @@ function SignedIn() {
       await setNotificationPrefs(next)
     } catch (e) {
       setNotifEnabled(!next)
-      Alert.alert('Couldn’t update', e instanceof Error ? e.message : String(e))
+      Alert.alert('Couldn’t update', errorMessage(e))
     } finally {
       setNotifBusy(false)
     }
@@ -230,7 +231,7 @@ function SignedIn() {
             try {
               await deleteMyAccount()
             } catch (e) {
-              Alert.alert('Couldn’t delete account', e instanceof Error ? e.message : String(e))
+              Alert.alert('Couldn’t delete account', errorMessage(e))
             }
           },
         },

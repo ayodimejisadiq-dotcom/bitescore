@@ -13,6 +13,7 @@ import { useRouter } from 'expo-router'
 import { useTheme } from '@/theme/useTheme'
 import { RestaurantRow } from '@/components/RestaurantRow'
 import { fetchNear, searchRestaurants } from '@/lib/data'
+import { errorMessage } from '@/lib/errors'
 import { EMPTY_FILTERS, type RestaurantNear } from '@/lib/types'
 
 export default function SearchScreen() {
@@ -65,7 +66,7 @@ export default function SearchScreen() {
       try {
         setResults(await searchRestaurants(text))
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e))
+        setError(errorMessage(e))
         setResults([])
       } finally {
         setLoading(false)

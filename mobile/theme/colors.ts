@@ -26,6 +26,20 @@ export function colorForRating(rating: string): string {
   return ratingColor[rating] ?? NEUTRAL_RATING
 }
 
+// Grey-to-green scale for the minimum-rating filter control (distinct from the
+// FSA red→green badge scale above — this one just shows "how strict" the
+// filter is, muted at 0 rising to full brand green at 5).
+const FILTER_GREY = { r: 0xb8, g: 0xbd, b: 0xba }
+const FILTER_GREEN = { r: 0x0a, g: 0x7c, b: 0x4a } // brand.primary
+
+export function greyToGreen(step: number, max = 5): string {
+  const t = Math.max(0, Math.min(1, step / max))
+  const r = Math.round(FILTER_GREY.r + (FILTER_GREEN.r - FILTER_GREY.r) * t)
+  const g = Math.round(FILTER_GREY.g + (FILTER_GREEN.g - FILTER_GREY.g) * t)
+  const b = Math.round(FILTER_GREY.b + (FILTER_GREEN.b - FILTER_GREY.b) * t)
+  return `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`
+}
+
 export const light = {
   bg: '#FFFFFF',
   card: '#F2F2F7',

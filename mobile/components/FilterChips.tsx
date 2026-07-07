@@ -1,6 +1,7 @@
 import { ScrollView, Pressable, Text, StyleSheet } from 'react-native'
 import { useTheme } from '@/theme/useTheme'
 import { BUSINESS_TYPE_LABEL, DINING_BUSINESS_TYPES } from '@/lib/fsa'
+import { RatingDropdown } from './RatingDropdown'
 import type { BrowseFilters } from '@/lib/types'
 
 // Horizontal filter row for the map and search screens. Toggles minimum rating
@@ -26,13 +27,9 @@ export function FilterChips({
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.row}
     >
-      <Chip
-        label="4+ rated"
-        active={filters.minRating === 4}
-        onPress={() =>
-          onChange({ ...filters, minRating: filters.minRating === 4 ? null : 4 })
-        }
-        c={c}
+      <RatingDropdown
+        value={filters.minRating}
+        onChange={(minRating) => onChange({ ...filters, minRating })}
       />
       {DINING_BUSINESS_TYPES.map((t) => (
         <Chip

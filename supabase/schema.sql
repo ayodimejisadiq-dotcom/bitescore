@@ -1,6 +1,6 @@
 -- Bitescore full schema — convenience file for pasting into the Supabase SQL Editor.
 -- Source of truth is the numbered files in supabase/migrations/. This is their
--- concatenation so you can apply everything in one run.
+-- concatenation so you can apply everything in one run. Safe to re-run (idempotent).
 
 -- ============================================================================
 -- supabase/migrations/0001_init.sql
@@ -18,6 +18,7 @@
 -- ---------------------------------------------------------------------------
 create extension if not exists postgis;
 create extension if not exists "uuid-ossp";
+create extension if not exists pg_trgm;   -- trigram search on names
 
 -- ---------------------------------------------------------------------------
 -- Restaurants (FSA FHRS establishments, dining venues only)
@@ -45,9 +46,6 @@ create index if not exists restaurants_geo_idx on public.restaurants using gist 
 create index if not exists restaurants_postcode_idx on public.restaurants (postcode);
 create index if not exists restaurants_name_trgm_idx on public.restaurants using gin (name gin_trgm_ops);
 create index if not exists restaurants_rating_idx on public.restaurants (rating_value);
-
--- trigram search on names
-create extension if not exists pg_trgm;
 
 alter table public.restaurants enable row level security;
 

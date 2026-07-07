@@ -6,13 +6,13 @@ import {
   ScrollView,
   Pressable,
   ActivityIndicator,
-  Alert,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useTheme } from '@/theme/useTheme'
 import { ScoreBadge } from '@/components/ScoreBadge'
+import { SaveToListModal } from '@/components/SaveToListModal'
 import { FSA_ATTRIBUTION, BUSINESS_TYPE_LABEL, ratingDescription } from '@/lib/fsa'
 import { getRestaurant, getReviews } from '@/lib/data'
 import type { Restaurant, Review } from '@/lib/types'
@@ -29,6 +29,7 @@ export default function RestaurantDetail() {
   const [place, setPlace] = useState<Restaurant | null>(null)
   const [reviews, setReviews] = useState<Review[]>([])
   const [loading, setLoading] = useState(true)
+  const [saveOpen, setSaveOpen] = useState(false)
 
   useEffect(() => {
     ;(async () => {
@@ -140,16 +141,13 @@ export default function RestaurantDetail() {
       </ScrollView>
 
       <View style={[styles.ctaBar, { backgroundColor: c.bg, borderTopColor: c.border }]}>
-        <Pressable
-          style={[styles.cta, { backgroundColor: c.primary }]}
-          onPress={() =>
-            Alert.alert('Coming soon', 'Saving places to your lists arrives in the next update.')
-          }
-        >
+        <Pressable style={[styles.cta, { backgroundColor: c.primary }]} onPress={() => setSaveOpen(true)}>
           <Ionicons name="bookmark-outline" size={18} color="#fff" />
           <Text style={styles.ctaText}>Add to a list</Text>
         </Pressable>
       </View>
+
+      <SaveToListModal visible={saveOpen} restaurantId={id} onClose={() => setSaveOpen(false)} />
     </SafeAreaView>
   )
 }

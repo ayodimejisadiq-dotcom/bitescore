@@ -38,6 +38,8 @@ export interface Restaurant {
   hours_fetched_at: string | null
   google_rating: number | null
   google_rating_count: number | null
+  lng: number | null
+  lat: number | null
 }
 
 export interface PlaceLookupResult {

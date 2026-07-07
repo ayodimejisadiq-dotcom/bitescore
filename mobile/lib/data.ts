@@ -74,13 +74,7 @@ export async function searchRestaurants(query: string): Promise<RestaurantNear[]
 }
 
 export async function getRestaurant(id: string): Promise<Restaurant | null> {
-  const { data, error } = await supabase
-    .from('restaurants')
-    .select(
-      'id,fhrs_id,name,business_type,business_type_id,address,postcode,local_authority,rating_value,rating_is_numeric,rating_date,hours_cache,hours_fetched_at,google_rating,google_rating_count',
-    )
-    .eq('id', id)
-    .maybeSingle()
+  const { data, error } = await supabase.rpc('restaurant_detail', { p_id: id }).maybeSingle()
   if (error) throw error
   return (data as Restaurant) ?? null
 }

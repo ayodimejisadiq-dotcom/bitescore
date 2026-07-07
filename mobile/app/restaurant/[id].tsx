@@ -7,6 +7,8 @@ import {
   Pressable,
   ActivityIndicator,
   Alert,
+  Linking,
+  Platform,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
@@ -133,6 +135,27 @@ export default function RestaurantDetail() {
     ])
   }
 
+  const onGetDirections = () => {
+    if (place.lat == null || place.lng == null) {
+      Alert.alert('No location available', 'We don’t have coordinates for this place yet.')
+      return
+    }
+    const { lat, lng } = place
+    const label = encodeURIComponent(place.name)
+    const appleUrl = `http://maps.apple.com/?daddr=${lat},${lng}&dirflg=w&q=${label}`
+    const googleUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=walking`
+
+    if (Platform.OS === 'ios') {
+      Alert.alert('Get directions', undefined, [
+        { text: 'Apple Maps', onPress: () => Linking.openURL(appleUrl) },
+        { text: 'Google Maps', onPress: () => Linking.openURL(googleUrl) },
+        { text: 'Cancel', style: 'cancel' },
+      ])
+    } else {
+      Linking.openURL(googleUrl)
+    }
+  }
+
   return (
     <SafeAreaView edges={['top']} style={[styles.root, { backgroundColor: c.bg }]}>
       <Pressable style={styles.back} onPress={() => router.back()} hitSlop={12}>
@@ -253,6 +276,13 @@ export default function RestaurantDetail() {
       </ScrollView>
 
       <View style={[styles.ctaBar, { backgroundColor: c.bg, borderTopColor: c.border }]}>
+        <Pressable
+          style={[styles.cta, styles.ctaOutline, { borderColor: c.primary }]}
+          onPress={onGetDirections}
+        >
+          <Ionicons name="navigate-outline" size={18} color={c.primary} />
+          <Text style={[styles.ctaText, { color: c.primary }]}>Directions</Text>
+        </Pressable>
         <Pressable style={[styles.cta, { backgroundColor: c.primary }]} onPress={() => setSaveOpen(true)}>
           <Ionicons name="bookmark-outline" size={18} color="#fff" />
           <Text style={styles.ctaText}>Add to a list</Text>
@@ -347,12 +377,15 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    flexDirection: 'row',
+    gap: 10,
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 30,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   cta: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -360,5 +393,6 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     borderRadius: 15,
   },
+  ctaOutline: { backgroundColor: 'transparent', borderWidth: 1.5 },
   ctaText: { color: '#fff', fontWeight: '700', fontSize: 16 },
 })

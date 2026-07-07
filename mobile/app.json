@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Bitescore",
+    "slug": "bitescore",
+    "scheme": "bitescore",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0A7C4A"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.bitescore.app",
+      "config": { "usesNonExemptEncryption": false },
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Bitescore uses your location to show hygiene ratings for places to eat near you."
+      }
+    },
+    "android": {
+      "package": "com.bitescore.app",
+      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-location",
+      "expo-notifications"
+    ],
+    "experiments": { "typedRoutes": true }
+  }
+}

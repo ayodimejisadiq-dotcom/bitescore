@@ -61,3 +61,20 @@ export interface BrowseFilters {
 }
 
 export const EMPTY_FILTERS: BrowseFilters = { minRating: null, types: null }
+
+export interface ListItemRestaurant {
+  id: string
+  name: string
+  business_type: string
+  rating_value: string
+  rating_is_numeric: boolean
+  address: string | null
+  postcode: string | null
+}
+
+export interface ListWithItems {
+  id: string
+  name: string
+  created_at: string
+  items: ListItemRestaurant[]
+}

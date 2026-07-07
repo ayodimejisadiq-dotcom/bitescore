@@ -31,6 +31,14 @@ export function FilterChips({
         value={filters.minRating}
         onChange={(minRating) => onChange({ ...filters, minRating })}
       />
+      <Chip
+        label="Hide awaiting inspection"
+        active={filters.hideAwaitingInspection}
+        onPress={() =>
+          onChange({ ...filters, hideAwaitingInspection: !filters.hideAwaitingInspection })
+        }
+        c={c}
+      />
       {DINING_BUSINESS_TYPES.map((t) => (
         <Chip
           key={t}

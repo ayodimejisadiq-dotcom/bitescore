@@ -17,10 +17,11 @@ import { useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/theme/useTheme'
 import { FilterChips } from '@/components/FilterChips'
+import { useFilters } from '@/hooks/useFilters'
 import { colorForRating } from '@/theme/colors'
 import { isNumericRating } from '@/lib/fsa'
 import { fetchPins, type Bounds } from '@/lib/data'
-import { EMPTY_FILTERS, type BrowseFilters, type RestaurantPin } from '@/lib/types'
+import type { BrowseFilters, RestaurantPin } from '@/lib/types'
 
 // Central London as a sensible default until we have the user's location.
 const DEFAULT_REGION: Region = {
@@ -56,7 +57,7 @@ export default function MapScreen() {
   const regionRef = useRef<Region>(DEFAULT_REGION)
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const [filters, setFilters] = useState<BrowseFilters>(EMPTY_FILTERS)
+  const [filters, setFilters, filtersLoaded] = useFilters()
   const [pins, setPins] = useState<RestaurantPin[]>([])
   const [loading, setLoading] = useState(false)
   const [locating, setLocating] = useState(false)
@@ -123,10 +124,13 @@ export default function MapScreen() {
   )
 
   // On first launch, try to centre on the user without nagging if denied.
+  // Waits for persisted filters to load first so this initial fetch already
+  // reflects the user's last settings instead of firing once with defaults.
   useEffect(() => {
+    if (!filtersLoaded) return
     recenterOnUser({ promptIfDenied: false })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [filtersLoaded])
 
   // Jump the map to a typed place name or postcode — distinct from the
   // Search tab, which looks up specific restaurants rather than locations.

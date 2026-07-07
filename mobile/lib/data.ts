@@ -1,13 +1,14 @@
 import { supabase } from './supabase'
 import { generateUsername, sanitizeUsername } from './username'
-import type {
-  BrowseFilters,
-  ListWithItems,
-  PlaceLookupResult,
-  Restaurant,
-  RestaurantNear,
-  RestaurantPin,
-  Review,
+import {
+  EMPTY_FILTERS,
+  type BrowseFilters,
+  type ListWithItems,
+  type PlaceLookupResult,
+  type Restaurant,
+  type RestaurantNear,
+  type RestaurantPin,
+  type Review,
 } from './types'
 
 const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL
@@ -31,6 +32,7 @@ export async function fetchPins(
     max_lat: bounds.maxLat,
     min_rating: filters.minRating,
     types: filters.types,
+    hide_awaiting_inspection: filters.hideAwaitingInspection,
   })
   if (error) throw error
   return (data ?? []) as RestaurantPin[]
@@ -48,13 +50,18 @@ export async function fetchNear(
     radius_m: radiusM,
     min_rating: filters.minRating,
     types: filters.types,
+    hide_awaiting_inspection: filters.hideAwaitingInspection,
   })
   if (error) throw error
   return (data ?? []) as RestaurantNear[]
 }
 
-// Text search by business name or postcode prefix.
-export async function searchRestaurants(query: string): Promise<RestaurantNear[]> {
+// Text search by business name or postcode prefix. Same filters as the
+// map/near-me queries apply here too, for consistency with FilterChips.
+export async function searchRestaurants(
+  query: string,
+  filters: BrowseFilters = EMPTY_FILTERS,
+): Promise<RestaurantNear[]> {
   const q = query.trim()
   if (!q) return []
   const isPostcodeish = /\d/.test(q) && q.length <= 8
@@ -66,6 +73,16 @@ export async function searchRestaurants(query: string): Promise<RestaurantNear[]
   builder = isPostcodeish
     ? builder.ilike('postcode', `${q}%`)
     : builder.ilike('name', `%${q}%`)
+
+  if (filters.minRating !== null) {
+    builder = builder.eq('rating_is_numeric', true).gte('rating_value', String(filters.minRating))
+  }
+  if (filters.types && filters.types.length) {
+    builder = builder.in('business_type', filters.types)
+  }
+  if (filters.hideAwaitingInspection) {
+    builder = builder.neq('rating_value', 'AwaitingInspection')
+  }
 
   const { data, error } = await builder
   if (error) throw error

@@ -12,9 +12,11 @@ import * as Location from 'expo-location'
 import { useRouter } from 'expo-router'
 import { useTheme } from '@/theme/useTheme'
 import { RestaurantRow } from '@/components/RestaurantRow'
+import { FilterChips } from '@/components/FilterChips'
+import { useFilters } from '@/hooks/useFilters'
 import { fetchNear, searchRestaurants } from '@/lib/data'
 import { errorMessage } from '@/lib/errors'
-import { EMPTY_FILTERS, type RestaurantNear } from '@/lib/types'
+import type { BrowseFilters, RestaurantNear } from '@/lib/types'
 
 export default function SearchScreen() {
   const c = useTheme()
@@ -24,33 +26,36 @@ export default function SearchScreen() {
   const [loading, setLoading] = useState(false)
   const [nearbyMode, setNearbyMode] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [filters, setFilters, filtersLoaded] = useFilters()
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Empty query → show places near the user.
+  const loadNearby = async (f: BrowseFilters) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync()
+      if (status !== 'granted') return
+      const pos = await Location.getCurrentPositionAsync({})
+      setResults(
+        await fetchNear({ lng: pos.coords.longitude, lat: pos.coords.latitude }, 2000, f),
+      )
+    } catch (e) {
+      // Location errors here are expected (permission not granted yet); only
+      // surface database/network failures.
+      if (e instanceof Error && !/location/i.test(e.message)) setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Empty query → show places near the user. Waits for persisted filters to
+  // load first so this initial fetch already reflects the user's last
+  // settings instead of firing once with defaults.
   useEffect(() => {
-    ;(async () => {
-      setLoading(true)
-      setError(null)
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync()
-        if (status !== 'granted') return
-        const pos = await Location.getCurrentPositionAsync({})
-        setResults(
-          await fetchNear(
-            { lng: pos.coords.longitude, lat: pos.coords.latitude },
-            2000,
-            EMPTY_FILTERS,
-          ),
-        )
-      } catch (e) {
-        // Location errors here are expected (permission not granted yet); only
-        // surface database/network failures.
-        if (e instanceof Error && !/location/i.test(e.message)) setError(e.message)
-      } finally {
-        setLoading(false)
-      }
-    })()
-  }, [])
+    if (!filtersLoaded) return
+    loadNearby(filters)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtersLoaded])
 
   const onChange = (text: string) => {
     setQuery(text)
@@ -64,7 +69,7 @@ export default function SearchScreen() {
       setLoading(true)
       setError(null)
       try {
-        setResults(await searchRestaurants(text))
+        setResults(await searchRestaurants(text, filters))
       } catch (e) {
         setError(errorMessage(e))
         setResults([])
@@ -72,6 +77,25 @@ export default function SearchScreen() {
         setLoading(false)
       }
     }, 300)
+  }
+
+  const onFiltersChange = (next: BrowseFilters) => {
+    setFilters(next)
+    if (nearbyMode) {
+      loadNearby(next)
+      return
+    }
+    const q = query.trim()
+    if (!q) return
+    setLoading(true)
+    setError(null)
+    searchRestaurants(q, next)
+      .then(setResults)
+      .catch((e) => {
+        setError(errorMessage(e))
+        setResults([])
+      })
+      .finally(() => setLoading(false))
   }
 
   return (
@@ -87,6 +111,7 @@ export default function SearchScreen() {
           style={[styles.input, { backgroundColor: c.card, color: c.text, borderColor: c.border }]}
         />
       </View>
+      <FilterChips filters={filters} onChange={onFiltersChange} />
       {error ? (
         <View style={styles.errorBox}>
           <Text style={[styles.errorTitle, { color: c.text }]}>Couldn't load results</Text>

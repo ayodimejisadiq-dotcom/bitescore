@@ -68,9 +68,14 @@ export interface Review {
 export interface BrowseFilters {
   minRating: number | null // numeric rating >= this
   types: string[] | null // FSA business_type filter
+  hideAwaitingInspection: boolean // exclude registered-but-never-inspected places
 }
 
-export const EMPTY_FILTERS: BrowseFilters = { minRating: null, types: null }
+export const EMPTY_FILTERS: BrowseFilters = {
+  minRating: null,
+  types: null,
+  hideAwaitingInspection: false,
+}
 
 export interface ListItemRestaurant {
   id: string

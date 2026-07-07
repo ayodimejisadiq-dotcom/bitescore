@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 import type {
   BrowseFilters,
+  ListWithItems,
   Restaurant,
   RestaurantNear,
   RestaurantPin,
@@ -90,4 +91,105 @@ export async function getReviews(restaurantId: string): Promise<Review[]> {
     .limit(50)
   if (error) throw error
   return (data ?? []) as Review[]
+}
+
+// ---------------------------------------------------------------------------
+// Lists
+// ---------------------------------------------------------------------------
+
+export async function fetchMyLists(): Promise<ListWithItems[]> {
+  const { data, error } = await supabase
+    .from('lists')
+    .select(
+      'id,name,created_at,list_items(restaurant_id,restaurants(id,name,business_type,rating_value,rating_is_numeric,address,postcode))',
+    )
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return (data ?? []).map((l: any) => ({
+    id: l.id,
+    name: l.name,
+    created_at: l.created_at,
+    items: (l.list_items ?? [])
+      .map((li: any) => li.restaurants)
+      .filter(Boolean),
+  }))
+}
+
+export async function createList(name: string): Promise<string> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not signed in')
+  const { data, error } = await supabase
+    .from('lists')
+    .insert({ user_id: user.id, name: name.trim() })
+    .select('id')
+    .single()
+  if (error) throw error
+  return data.id as string
+}
+
+export async function renameList(listId: string, name: string): Promise<void> {
+  const { error } = await supabase.from('lists').update({ name: name.trim() }).eq('id', listId)
+  if (error) throw error
+}
+
+export async function deleteList(listId: string): Promise<void> {
+  const { error } = await supabase.from('lists').delete().eq('id', listId)
+  if (error) throw error
+}
+
+export async function addToList(listId: string, restaurantId: string): Promise<void> {
+  const { error } = await supabase
+    .from('list_items')
+    .upsert({ list_id: listId, restaurant_id: restaurantId }, { onConflict: 'list_id,restaurant_id' })
+  if (error) throw error
+}
+
+export async function removeFromList(listId: string, restaurantId: string): Promise<void> {
+  const { error } = await supabase
+    .from('list_items')
+    .delete()
+    .eq('list_id', listId)
+    .eq('restaurant_id', restaurantId)
+  if (error) throw error
+}
+
+// Which of the current user's lists already contain this restaurant.
+export async function listIdsContaining(restaurantId: string): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from('list_items')
+    .select('list_id')
+    .eq('restaurant_id', restaurantId)
+  if (error) throw error
+  return new Set((data ?? []).map((r) => r.list_id as string))
+}
+
+// ---------------------------------------------------------------------------
+// Notification prefs
+// ---------------------------------------------------------------------------
+
+export async function getNotificationPrefs(): Promise<boolean> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return true
+  const { data, error } = await supabase
+    .from('notification_prefs')
+    .select('score_change_enabled')
+    .eq('user_id', user.id)
+    .maybeSingle()
+  if (error) throw error
+  return data?.score_change_enabled ?? true
+}
+
+export async function setNotificationPrefs(enabled: boolean): Promise<void> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not signed in')
+  const { error } = await supabase
+    .from('notification_prefs')
+    .upsert({ user_id: user.id, score_change_enabled: enabled }, { onConflict: 'user_id' })
+  if (error) throw error
 }

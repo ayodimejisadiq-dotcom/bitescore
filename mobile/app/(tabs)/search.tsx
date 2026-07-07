@@ -22,12 +22,14 @@ export default function SearchScreen() {
   const [results, setResults] = useState<RestaurantNear[]>([])
   const [loading, setLoading] = useState(false)
   const [nearbyMode, setNearbyMode] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Empty query → show places near the user.
   useEffect(() => {
     ;(async () => {
       setLoading(true)
+      setError(null)
       try {
         const { status } = await Location.requestForegroundPermissionsAsync()
         if (status !== 'granted') return
@@ -39,8 +41,10 @@ export default function SearchScreen() {
             EMPTY_FILTERS,
           ),
         )
-      } catch {
-        /* leave empty */
+      } catch (e) {
+        // Location errors here are expected (permission not granted yet); only
+        // surface database/network failures.
+        if (e instanceof Error && !/location/i.test(e.message)) setError(e.message)
       } finally {
         setLoading(false)
       }
@@ -57,10 +61,12 @@ export default function SearchScreen() {
     setNearbyMode(false)
     debounce.current = setTimeout(async () => {
       setLoading(true)
+      setError(null)
       try {
         setResults(await searchRestaurants(text))
-      } catch {
-        /* leave */
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e))
+        setResults([])
       } finally {
         setLoading(false)
       }
@@ -80,7 +86,12 @@ export default function SearchScreen() {
           style={[styles.input, { backgroundColor: c.card, color: c.text, borderColor: c.border }]}
         />
       </View>
-      {loading ? (
+      {error ? (
+        <View style={styles.errorBox}>
+          <Text style={[styles.errorTitle, { color: c.text }]}>Couldn't load results</Text>
+          <Text style={[styles.errorDetail, { color: c.subtext }]}>{error}</Text>
+        </View>
+      ) : loading ? (
         <ActivityIndicator style={{ marginTop: 24 }} color={c.primary} />
       ) : (
         <FlatList
@@ -127,4 +138,7 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   empty: { textAlign: 'center', marginTop: 40, paddingHorizontal: 40, fontSize: 15, lineHeight: 22 },
+  errorBox: { marginTop: 40, paddingHorizontal: 32, alignItems: 'center', gap: 6 },
+  errorTitle: { fontSize: 16, fontWeight: '700' },
+  errorDetail: { fontSize: 13, textAlign: 'center', lineHeight: 19 },
 })

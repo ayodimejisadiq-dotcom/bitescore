@@ -80,6 +80,31 @@ export function ratingDescription(rating: string): string {
   }
 }
 
+// Caption under the score badge. Non-numeric statuses never have a
+// meaningful inspection date (FSA sends a placeholder sentinel date for
+// these rather than leaving it blank), so those read as a status instead of
+// "Last inspected [date]".
+export function inspectionStatusLine(rating: string, ratingDate: string | null): string {
+  if (isNumericRating(rating) && ratingDate) {
+    const formatted = new Date(ratingDate).toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    })
+    return `Last inspected ${formatted} · Food Standards Agency`
+  }
+  switch (rating) {
+    case 'AwaitingInspection':
+      return 'Registered — awaiting first inspection · Food Standards Agency'
+    case 'AwaitingPublication':
+      return 'Inspected — rating awaiting publication · Food Standards Agency'
+    case 'Exempt':
+      return 'Exempt from inspection · Food Standards Agency'
+    default:
+      return 'Food Standards Agency'
+  }
+}
+
 // FSA data is a point-in-time snapshot — surfaced in the UI near every score.
 export const FSA_ATTRIBUTION =
   'Food hygiene ratings © Crown copyright, Food Standards Agency, under the Open Government Licence. Ratings reflect the last inspection and may be out of date.'

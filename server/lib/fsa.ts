@@ -124,7 +124,11 @@ export function toRow(e: FsaEstablishment): RestaurantRow {
     lng,
     lat,
     rating_value: (e.RatingValue ?? '').trim(),
-    // RatingDate comes as an ISO datetime or null; keep the date part only.
-    rating_date: e.RatingDate ? e.RatingDate.slice(0, 10) : null,
+    // FSA sends a meaningless sentinel date (e.g. 1900-01-01) for
+    // non-numeric statuses like AwaitingInspection instead of leaving this
+    // blank — only keep it for establishments that actually have a rating.
+    rating_date: /^[0-5]$/.test((e.RatingValue ?? '').trim()) && e.RatingDate
+      ? e.RatingDate.slice(0, 10)
+      : null,
   }
 }

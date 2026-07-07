@@ -14,14 +14,9 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useTheme } from '@/theme/useTheme'
 import { ScoreBadge } from '@/components/ScoreBadge'
 import { SaveToListModal } from '@/components/SaveToListModal'
-import { FSA_ATTRIBUTION, BUSINESS_TYPE_LABEL, ratingDescription } from '@/lib/fsa'
+import { FSA_ATTRIBUTION, BUSINESS_TYPE_LABEL, ratingDescription, inspectionStatusLine } from '@/lib/fsa'
 import { getRestaurant, getReviews, lookupPlaceData } from '@/lib/data'
 import type { OpeningHours, Restaurant, Review } from '@/lib/types'
-
-function formatDate(d: string | null): string {
-  if (!d) return 'Not yet inspected'
-  return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
-}
 
 export default function RestaurantDetail() {
   const c = useTheme()
@@ -112,7 +107,7 @@ export default function RestaurantDetail() {
               {ratingDescription(place.rating_value)}
             </Text>
             <Text style={[styles.rwhen, { color: c.subtext }]}>
-              Last inspected {formatDate(place.rating_date)} · Food Standards Agency
+              {inspectionStatusLine(place.rating_value, place.rating_date)}
             </Text>
           </View>
         </View>

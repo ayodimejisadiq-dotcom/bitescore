@@ -6,6 +6,7 @@ import {
   ScrollView,
   Pressable,
   ActivityIndicator,
+  Alert,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
@@ -14,8 +15,8 @@ import { useTheme } from '@/theme/useTheme'
 import { ScoreBadge } from '@/components/ScoreBadge'
 import { SaveToListModal } from '@/components/SaveToListModal'
 import { FSA_ATTRIBUTION, BUSINESS_TYPE_LABEL, ratingDescription } from '@/lib/fsa'
-import { getRestaurant, getReviews } from '@/lib/data'
-import type { Restaurant, Review } from '@/lib/types'
+import { getRestaurant, getReviews, lookupPlaceData } from '@/lib/data'
+import type { OpeningHours, Restaurant, Review } from '@/lib/types'
 
 function formatDate(d: string | null): string {
   if (!d) return 'Not yet inspected'
@@ -30,6 +31,9 @@ export default function RestaurantDetail() {
   const [reviews, setReviews] = useState<Review[]>([])
   const [loading, setLoading] = useState(true)
   const [saveOpen, setSaveOpen] = useState(false)
+  const [googleRating, setGoogleRating] = useState<number | null>(null)
+  const [googleRatingCount, setGoogleRatingCount] = useState<number | null>(null)
+  const [hours, setHours] = useState<OpeningHours | null>(null)
 
   useEffect(() => {
     ;(async () => {
@@ -37,10 +41,25 @@ export default function RestaurantDetail() {
         const [p, r] = await Promise.all([getRestaurant(id), getReviews(id)])
         setPlace(p)
         setReviews(r)
+        setGoogleRating(p?.google_rating ?? null)
+        setGoogleRatingCount(p?.google_rating_count ?? null)
+        setHours(p?.hours_cache ?? null)
       } finally {
         setLoading(false)
       }
     })()
+  }, [id])
+
+  // Fire-and-forget: refreshes Google rating + hours in the background (the
+  // server no-ops if its own cache is still fresh, so this is cheap to call
+  // on every view).
+  useEffect(() => {
+    lookupPlaceData(id).then((result) => {
+      if (!result) return
+      if (result.googleRating !== null) setGoogleRating(result.googleRating)
+      if (result.googleRatingCount !== null) setGoogleRatingCount(result.googleRatingCount)
+      if (result.hours) setHours(result.hours)
+    })
   }, [id])
 
   if (loading) {
@@ -59,8 +78,12 @@ export default function RestaurantDetail() {
     )
   }
 
-  const hours = place.hours_cache?.weekday_text
-  const openNow = place.hours_cache?.open_now
+  const hoursLines = hours?.weekday_text
+  const openNow = hours?.open_now
+
+  const onSubmitReview = () => {
+    Alert.alert('Coming soon', 'Writing reviews arrives in the next update.')
+  }
 
   return (
     <SafeAreaView edges={['top']} style={[styles.root, { backgroundColor: c.bg }]}>
@@ -94,6 +117,39 @@ export default function RestaurantDetail() {
           </View>
         </View>
 
+        <View style={[styles.ratingsCard, { backgroundColor: c.card, borderColor: c.border }]}>
+          <View style={styles.ratingsCol}>
+            <Text style={[styles.k, { color: c.subtext }]}>Google rating</Text>
+            {googleRating !== null ? (
+              <View style={styles.ratingRow}>
+                <Ionicons name="star" size={15} color="#F5A800" />
+                <Text style={[styles.ratingValue, { color: c.text }]}>{googleRating.toFixed(1)}</Text>
+                {googleRatingCount !== null ? (
+                  <Text style={[styles.ratingCount, { color: c.subtext }]}>({googleRatingCount})</Text>
+                ) : null}
+              </View>
+            ) : (
+              <Text style={[styles.v, { color: c.subtext }]}>Not yet available</Text>
+            )}
+          </View>
+          <View style={[styles.ratingsDivider, { backgroundColor: c.border }]} />
+          <View style={styles.ratingsCol}>
+            <Text style={[styles.k, { color: c.subtext }]}>Bitescore</Text>
+            {reviews.length === 0 ? (
+              <Pressable onPress={onSubmitReview}>
+                <Text style={[styles.v, { color: c.primary }]}>Pending — submit the first review</Text>
+              </Pressable>
+            ) : (
+              <Text style={[styles.v, { color: c.text }]}>
+                {reviews.length} review{reviews.length === 1 ? '' : 's'}
+              </Text>
+            )}
+          </View>
+        </View>
+        {googleRating !== null ? (
+          <Text style={[styles.googleAttrib, { color: c.subtext }]}>Rating powered by Google</Text>
+        ) : null}
+
         <View style={styles.infoRow}>
           <View style={[styles.infoCard, { backgroundColor: c.card, borderColor: c.border }]}>
             <Text style={[styles.k, { color: c.subtext }]}>Opening hours</Text>
@@ -109,9 +165,9 @@ export default function RestaurantDetail() {
           </View>
         </View>
 
-        {hours && hours.length ? (
+        {hoursLines && hoursLines.length ? (
           <View style={[styles.hoursCard, { backgroundColor: c.card, borderColor: c.border }]}>
-            {hours.map((line) => (
+            {hoursLines.map((line) => (
               <Text key={line} style={[styles.hoursLine, { color: c.text }]}>
                 {line}
               </Text>
@@ -171,6 +227,20 @@ const styles = StyleSheet.create({
   },
   rlabel: { fontSize: 17, fontWeight: '800' },
   rwhen: { fontSize: 12.5, marginTop: 4, lineHeight: 17 },
+  ratingsCard: {
+    flexDirection: 'row',
+    marginHorizontal: 20,
+    marginTop: 10,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 12,
+  },
+  ratingsCol: { flex: 1, paddingHorizontal: 14, gap: 5 },
+  ratingsDivider: { width: StyleSheet.hairlineWidth },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  ratingValue: { fontSize: 15, fontWeight: '700' },
+  ratingCount: { fontSize: 12.5 },
+  googleAttrib: { fontSize: 10.5, marginHorizontal: 20, marginTop: 5 },
   infoRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 20, marginTop: 12 },
   infoCard: { flex: 1, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, padding: 12 },
   k: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },

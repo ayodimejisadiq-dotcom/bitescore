@@ -36,6 +36,14 @@ export interface Restaurant {
   rating_date: string | null
   hours_cache: OpeningHours | null
   hours_fetched_at: string | null
+  google_rating: number | null
+  google_rating_count: number | null
+}
+
+export interface PlaceLookupResult {
+  googleRating: number | null
+  googleRatingCount: number | null
+  hours: OpeningHours | null
 }
 
 export interface OpeningHours {

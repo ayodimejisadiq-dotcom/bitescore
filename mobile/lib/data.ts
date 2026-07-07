@@ -2,11 +2,14 @@ import { supabase } from './supabase'
 import type {
   BrowseFilters,
   ListWithItems,
+  PlaceLookupResult,
   Restaurant,
   RestaurantNear,
   RestaurantPin,
   Review,
 } from './types'
+
+const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL
 
 export interface Bounds {
   minLng: number
@@ -73,12 +76,31 @@ export async function getRestaurant(id: string): Promise<Restaurant | null> {
   const { data, error } = await supabase
     .from('restaurants')
     .select(
-      'id,fhrs_id,name,business_type,business_type_id,address,postcode,local_authority,rating_value,rating_is_numeric,rating_date,hours_cache,hours_fetched_at',
+      'id,fhrs_id,name,business_type,business_type_id,address,postcode,local_authority,rating_value,rating_is_numeric,rating_date,hours_cache,hours_fetched_at,google_rating,google_rating_count',
     )
     .eq('id', id)
     .maybeSingle()
   if (error) throw error
   return (data as Restaurant) ?? null
+}
+
+// Triggers the server's lazy Google Places lookup (rating + hours) for this
+// restaurant. Cheap to call on every detail-page view — the server itself
+// skips the actual Google API call if the cached data is still fresh.
+export async function lookupPlaceData(restaurantId: string): Promise<PlaceLookupResult | null> {
+  if (!SERVER_URL) return null
+  try {
+    const res = await fetch(`${SERVER_URL}/api/places/lookup?restaurantId=${restaurantId}`)
+    if (!res.ok) return null
+    const json = await res.json()
+    return {
+      googleRating: json.googleRating ?? null,
+      googleRatingCount: json.googleRatingCount ?? null,
+      hours: json.hours ?? null,
+    }
+  } catch {
+    return null
+  }
 }
 
 export async function getReviews(restaurantId: string): Promise<Review[]> {

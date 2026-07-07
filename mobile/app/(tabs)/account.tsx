@@ -14,6 +14,7 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
+import RevenueCatUI from 'react-native-purchases-ui'
 import { useTheme } from '@/theme/useTheme'
 import { useSession } from '@/hooks/useSession'
 import {
@@ -298,6 +299,13 @@ function AccountEditor() {
             <Text style={[styles.hint, { color: c.subtext }]}>
               Get notified when a place on one of your lists gets a new hygiene score.
             </Text>
+          </Section>
+
+          <Section title="Subscription" c={c}>
+            <Pressable onPress={() => RevenueCatUI.presentCustomerCenter()} style={styles.rowButton}>
+              <Text style={{ color: c.text, fontSize: 15 }}>Manage subscription</Text>
+              <Ionicons name="chevron-forward" size={18} color={c.subtext} />
+            </Pressable>
           </Section>
 
           <Section title="Session" c={c}>

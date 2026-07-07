@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert, Linking } from 'react-native'
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import MapView, { Marker, type Region } from 'react-native-maps'
 import * as Location from 'expo-location'
 import { useRouter } from 'expo-router'
+import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/theme/useTheme'
 import { FilterChips } from '@/components/FilterChips'
 import { colorForRating } from '@/theme/colors'
@@ -31,6 +32,7 @@ function regionToBounds(r: Region): Bounds {
 export default function MapScreen() {
   const c = useTheme()
   const router = useRouter()
+  const insets = useSafeAreaInsets()
   const mapRef = useRef<MapView | null>(null)
   const regionRef = useRef<Region>(DEFAULT_REGION)
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -38,6 +40,7 @@ export default function MapScreen() {
   const [filters, setFilters] = useState<BrowseFilters>(EMPTY_FILTERS)
   const [pins, setPins] = useState<RestaurantPin[]>([])
   const [loading, setLoading] = useState(false)
+  const [locating, setLocating] = useState(false)
 
   const load = useCallback(
     async (region: Region, f: BrowseFilters) => {
@@ -53,29 +56,53 @@ export default function MapScreen() {
     [],
   )
 
-  // Ask for location once and centre on the user if granted.
-  useEffect(() => {
-    ;(async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync()
-      if (status === 'granted') {
-        try {
-          const pos = await Location.getCurrentPositionAsync({})
-          const region: Region = {
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-            latitudeDelta: 0.03,
-            longitudeDelta: 0.03,
-          }
-          regionRef.current = region
-          mapRef.current?.animateToRegion(region, 500)
-          load(region, filters)
-          return
-        } catch {
-          /* fall through to default */
+  // Shared by first launch and the "my location" button, so both recentre and
+  // reload pins the same way.
+  const recenterOnUser = useCallback(
+    async (opts: { promptIfDenied: boolean }) => {
+      setLocating(true)
+      try {
+        let { status } = await Location.getForegroundPermissionsAsync()
+        if (status !== 'granted') {
+          ;({ status } = await Location.requestForegroundPermissionsAsync())
         }
+        if (status !== 'granted') {
+          if (opts.promptIfDenied) {
+            Alert.alert(
+              'Location access needed',
+              'Turn on location access for Bitescore in Settings to centre the map on where you are.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => Linking.openSettings() },
+              ],
+            )
+          }
+          load(regionRef.current, filters)
+          return
+        }
+        const pos = await Location.getCurrentPositionAsync({})
+        const region: Region = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          latitudeDelta: 0.03,
+          longitudeDelta: 0.03,
+        }
+        regionRef.current = region
+        mapRef.current?.animateToRegion(region, 500)
+        load(region, filters)
+      } catch {
+        load(regionRef.current, filters)
+      } finally {
+        setLocating(false)
       }
-      load(DEFAULT_REGION, filters)
-    })()
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filters],
+  )
+
+  // On first launch, try to centre on the user without nagging if denied.
+  useEffect(() => {
+    recenterOnUser({ promptIfDenied: false })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -128,6 +155,21 @@ export default function MapScreen() {
           </View>
         ) : null}
       </SafeAreaView>
+
+      <Pressable
+        onPress={() => recenterOnUser({ promptIfDenied: true })}
+        style={[
+          styles.locateBtn,
+          { backgroundColor: c.card, borderColor: c.border, bottom: insets.bottom + 20 },
+        ]}
+        hitSlop={8}
+      >
+        {locating ? (
+          <ActivityIndicator size="small" color={c.primary} />
+        ) : (
+          <Ionicons name="locate" size={22} color={c.primary} />
+        )}
+      </Pressable>
     </View>
   )
 }
@@ -165,5 +207,20 @@ const styles = StyleSheet.create({
     marginTop: 8,
     padding: 8,
     borderRadius: 10,
+  },
+  locateBtn: {
+    position: 'absolute',
+    right: 16,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
   },
 })

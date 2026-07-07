@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { generateUsername, sanitizeUsername } from './username'
 import type {
   BrowseFilters,
   ListWithItems,
@@ -185,6 +186,61 @@ export async function listIdsContaining(restaurantId: string): Promise<Set<strin
     .eq('restaurant_id', restaurantId)
   if (error) throw error
   return new Set((data ?? []).map((r) => r.list_id as string))
+}
+
+// ---------------------------------------------------------------------------
+// Profile
+// ---------------------------------------------------------------------------
+
+export interface Profile {
+  first_name: string | null
+  last_name: string | null
+  username: string | null
+}
+
+export async function getProfile(): Promise<Profile | null> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return null
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('first_name,last_name,username')
+    .eq('user_id', user.id)
+    .maybeSingle()
+  if (error) throw error
+  return (data as Profile) ?? null
+}
+
+// Saves first/last name and (re)generates a username from them. Retries a
+// few times on a username collision before giving up.
+export async function saveProfileNames(firstName: string, lastName: string): Promise<string> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not signed in')
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const username = generateUsername(firstName, lastName)
+    const { error } = await supabase
+      .from('profiles')
+      .update({ first_name: firstName.trim(), last_name: lastName.trim(), username })
+      .eq('user_id', user.id)
+    if (!error) return username
+    if (error.code !== '23505') throw error // not a unique-violation, don't retry
+  }
+  throw new Error('Could not generate a unique username — please try again')
+}
+
+export async function setUsername(username: string): Promise<void> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not signed in')
+  const clean = sanitizeUsername(username)
+  if (!clean) throw new Error('Enter a username')
+  const { error } = await supabase.from('profiles').update({ username: clean }).eq('user_id', user.id)
+  if (error) throw error
 }
 
 // ---------------------------------------------------------------------------

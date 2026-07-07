@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { View, Text, TextInput, Pressable, Modal, FlatList, ActivityIndicator, StyleSheet } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
-import { useRouter } from 'expo-router'
 import { useTheme } from '@/theme/useTheme'
 import { useSession } from '@/hooks/useSession'
+import { ensureSession } from '@/lib/auth'
 import { fetchMyLists, createList, addToList, removeFromList, listIdsContaining } from '@/lib/data'
 import type { ListWithItems } from '@/lib/types'
 
@@ -17,7 +17,6 @@ export function SaveToListModal({
   onClose: () => void
 }) {
   const c = useTheme()
-  const router = useRouter()
   const { session } = useSession()
   const [lists, setLists] = useState<ListWithItems[]>([])
   const [checked, setChecked] = useState<Set<string>>(new Set())
@@ -72,22 +71,19 @@ export function SaveToListModal({
   }
 
   if (!session) {
+    // Normally unreachable — the app signs in anonymously at launch. Only
+    // shows if that failed (e.g. no network on first open).
     return (
       <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
         <Pressable style={styles.backdrop} onPress={onClose}>
           <View style={[styles.card, { backgroundColor: c.card }]}>
-            <Text style={[styles.title, { color: c.text }]}>Sign in to save places</Text>
-            <Text style={[styles.p, { color: c.subtext }]}>
-              Create an account to add this to a list and get score-change alerts.
-            </Text>
+            <Text style={[styles.title, { color: c.text }]}>Couldn’t connect</Text>
+            <Text style={[styles.p, { color: c.subtext }]}>Check your connection and try again.</Text>
             <Pressable
               style={[styles.primaryBtn, { backgroundColor: c.primary }]}
-              onPress={() => {
-                onClose()
-                router.push('/account')
-              }}
+              onPress={() => ensureSession()}
             >
-              <Text style={styles.primaryBtnText}>Go to Account</Text>
+              <Text style={styles.primaryBtnText}>Retry</Text>
             </Pressable>
           </View>
         </Pressable>

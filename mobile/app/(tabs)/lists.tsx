@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { useRouter, useFocusEffect } from 'expo-router'
 import { useTheme } from '@/theme/useTheme'
 import { useSession } from '@/hooks/useSession'
+import { ensureSession } from '@/lib/auth'
 import { ScoreBadge } from '@/components/ScoreBadge'
 import { fetchMyLists, createList, renameList, deleteList } from '@/lib/data'
 import { errorMessage } from '@/lib/errors'
@@ -93,6 +94,8 @@ export default function ListsScreen() {
   }
 
   if (!session) {
+    // Normally unreachable — the app signs in anonymously at launch. Only
+    // shows if that failed (e.g. no network on first open).
     return (
       <SafeAreaView edges={['top']} style={[styles.root, { backgroundColor: c.bg }]}>
         <View style={styles.head}>
@@ -100,15 +103,10 @@ export default function ListsScreen() {
         </View>
         <View style={styles.center}>
           <Ionicons name="bookmark-outline" size={40} color={c.subtext} />
-          <Text style={[styles.h, { color: c.text }]}>Sign in to save places</Text>
-          <Text style={[styles.p, { color: c.subtext }]}>
-            Create lists like “Date night” or “Want to try”,{'\n'}and get alerted when a score changes.
-          </Text>
-          <Pressable
-            onPress={() => router.push('/account')}
-            style={[styles.signInBtn, { backgroundColor: c.primary }]}
-          >
-            <Text style={styles.signInBtnText}>Go to Account</Text>
+          <Text style={[styles.h, { color: c.text }]}>Couldn’t connect</Text>
+          <Text style={[styles.p, { color: c.subtext }]}>Check your connection and try again.</Text>
+          <Pressable onPress={() => ensureSession()} style={[styles.signInBtn, { backgroundColor: c.primary }]}>
+            <Text style={styles.signInBtnText}>Retry</Text>
           </Pressable>
         </View>
       </SafeAreaView>

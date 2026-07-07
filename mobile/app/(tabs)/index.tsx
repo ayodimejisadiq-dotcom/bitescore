@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert, Linking } from 'react-native'
+import {
+  View,
+  Text,
+  TextInput,
+  StyleSheet,
+  Pressable,
+  ActivityIndicator,
+  Alert,
+  Linking,
+  Keyboard,
+} from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import MapView, { Marker, type Region } from 'react-native-maps'
 import * as Location from 'expo-location'
@@ -29,6 +39,15 @@ function regionToBounds(r: Region): Bounds {
   }
 }
 
+// Rough UK-postcode-ish check (same heuristic used for restaurant search):
+// short and contains a digit. Postcodes get a tight zoom; place names
+// ("Manchester") get a wider, city-scale view.
+function regionForQuery(query: string, lat: number, lng: number): Region {
+  const isPostcodeish = /\d/.test(query) && query.trim().length <= 8
+  const delta = isPostcodeish ? 0.03 : 0.2
+  return { latitude: lat, longitude: lng, latitudeDelta: delta, longitudeDelta: delta }
+}
+
 export default function MapScreen() {
   const c = useTheme()
   const router = useRouter()
@@ -41,6 +60,9 @@ export default function MapScreen() {
   const [pins, setPins] = useState<RestaurantPin[]>([])
   const [loading, setLoading] = useState(false)
   const [locating, setLocating] = useState(false)
+  const [placeQuery, setPlaceQuery] = useState('')
+  const [searchingPlace, setSearchingPlace] = useState(false)
+  const [placeError, setPlaceError] = useState<string | null>(null)
 
   const load = useCallback(
     async (region: Region, f: BrowseFilters) => {
@@ -106,6 +128,31 @@ export default function MapScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Jump the map to a typed place name or postcode — distinct from the
+  // Search tab, which looks up specific restaurants rather than locations.
+  const onSearchPlace = async () => {
+    const query = placeQuery.trim()
+    if (!query) return
+    Keyboard.dismiss()
+    setSearchingPlace(true)
+    setPlaceError(null)
+    try {
+      const results = await Location.geocodeAsync(query)
+      if (!results.length) {
+        setPlaceError('Couldn’t find that place. Try a different spelling or postcode.')
+        return
+      }
+      const region = regionForQuery(query, results[0].latitude, results[0].longitude)
+      regionRef.current = region
+      mapRef.current?.animateToRegion(region, 500)
+      load(region, filters)
+    } catch {
+      setPlaceError('Couldn’t search right now. Check your connection and try again.')
+    } finally {
+      setSearchingPlace(false)
+    }
+  }
+
   const onRegionChangeComplete = (region: Region) => {
     regionRef.current = region
     if (debounce.current) clearTimeout(debounce.current)
@@ -142,12 +189,29 @@ export default function MapScreen() {
       </MapView>
 
       <SafeAreaView edges={['top']} style={styles.overlay} pointerEvents="box-none">
-        <Pressable
-          style={[styles.search, { backgroundColor: c.card, borderColor: c.border }]}
-          onPress={() => router.push('/search')}
-        >
-          <Text style={{ color: c.subtext, fontSize: 15 }}>Search places or a postcode</Text>
-        </Pressable>
+        <View style={[styles.search, { backgroundColor: c.card, borderColor: c.border }]}>
+          <Ionicons name="search" size={16} color={c.subtext} />
+          <TextInput
+            value={placeQuery}
+            onChangeText={(t) => {
+              setPlaceQuery(t)
+              setPlaceError(null)
+            }}
+            onSubmitEditing={onSearchPlace}
+            placeholder="Go to a town or postcode"
+            placeholderTextColor={c.subtext}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+            style={[styles.searchInput, { color: c.text }]}
+          />
+          {searchingPlace ? <ActivityIndicator size="small" color={c.primary} /> : null}
+        </View>
+        {placeError ? (
+          <View style={[styles.errorBanner, { backgroundColor: c.card }]}>
+            <Text style={[styles.errorText, { color: c.subtext }]}>{placeError}</Text>
+          </View>
+        ) : null}
         <FilterChips filters={filters} onChange={onFilters} />
         {loading ? (
           <View style={[styles.loading, { backgroundColor: c.card }]}>
@@ -178,11 +242,14 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   overlay: { position: 'absolute', top: 0, left: 0, right: 0 },
   search: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
     marginHorizontal: 14,
     marginTop: 6,
     marginBottom: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
     shadowColor: '#000',
@@ -191,6 +258,15 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 3,
   },
+  searchInput: { flex: 1, fontSize: 15, padding: 0 },
+  errorBanner: {
+    marginHorizontal: 14,
+    marginBottom: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  errorText: { fontSize: 12.5, lineHeight: 18 },
   pin: {
     minWidth: 30,
     height: 30,

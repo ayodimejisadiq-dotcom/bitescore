@@ -86,6 +86,18 @@ export function isDining(businessType: string): boolean {
   return DINING_BUSINESS_TYPES.has(businessType)
 }
 
+// FSA has no field distinguishing restaurants from cafes — both share the
+// single BusinessType "Restaurant/Cafe/Canteen". Split them ourselves with a
+// best-effort name heuristic and store 'Restaurant' or 'Cafe' as our own
+// business_type instead of FSA's raw string. Kept in sync with the identical
+// heuristic in mobile/lib/fsa.ts (classifyRestaurantOrCafe).
+const CAFE_KEYWORDS = /caf[eé]|coffee|tea\s*room|patisserie/i
+
+function normalizedBusinessType(fsaType: string, name: string): string {
+  if (fsaType !== 'Restaurant/Cafe/Canteen') return fsaType
+  return CAFE_KEYWORDS.test(name) ? 'Cafe' : 'Restaurant'
+}
+
 function num(s: string | null | undefined): number | null {
   if (s === null || s === undefined || s === '') return null
   const n = Number(s)
@@ -104,7 +116,7 @@ export function toRow(e: FsaEstablishment): RestaurantRow {
   return {
     fhrs_id: e.FHRSID,
     name: e.BusinessName,
-    business_type: e.BusinessType,
+    business_type: normalizedBusinessType(e.BusinessType, e.BusinessName),
     business_type_id: e.BusinessTypeID ?? null,
     address: address || null,
     postcode: e.PostCode?.trim() || null,

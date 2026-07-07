@@ -1,10 +1,15 @@
 // FSA FHRS rating helpers + the dining venue types Bitescore includes.
 // Kept framework-free so the server can share the same logic if needed.
 
-// FSA BusinessType strings for "places you eat out". Retailers, schools, care
-// homes, hospitals etc. are deliberately excluded from Bitescore.
+// Venue types Bitescore shows in filters. FSA lumps restaurants and cafes into
+// one BusinessType ("Restaurant/Cafe/Canteen") with no field distinguishing
+// them, so we split it ourselves at ingestion time using a name-keyword
+// heuristic (see isCafeName below) and store 'Restaurant' or 'Cafe' as our own
+// business_type instead of FSA's raw string. Retailers, schools, care homes,
+// hospitals etc. are deliberately excluded from Bitescore entirely.
 export const DINING_BUSINESS_TYPES = [
-  'Restaurant/Cafe/Canteen',
+  'Restaurant',
+  'Cafe',
   'Takeaway/sandwich shop',
   'Pub/bar/nightclub',
   'Mobile caterer',
@@ -15,11 +20,23 @@ export type DiningBusinessType = (typeof DINING_BUSINESS_TYPES)[number]
 
 // Short, friendly labels for filter chips.
 export const BUSINESS_TYPE_LABEL: Record<string, string> = {
-  'Restaurant/Cafe/Canteen': 'Restaurants & cafes',
+  Restaurant: 'Restaurants',
+  Cafe: 'Cafes',
   'Takeaway/sandwich shop': 'Takeaways',
   'Pub/bar/nightclub': 'Pubs & bars',
   'Mobile caterer': 'Mobile caterers',
   'Hotel/bed & breakfast/guest house': 'Hotels & B&Bs',
+}
+
+// Keyword heuristic for splitting FSA's combined "Restaurant/Cafe/Canteen"
+// category. Best-effort, not exact — a restaurant branded "The Ivy Cafe"
+// will be classed as a cafe, and a cafe with no cafe-ish word in its name
+// will be classed as a restaurant. Shared by ingestion (server) and any
+// client-side reclassification.
+const CAFE_KEYWORDS = /caf[eé]|coffee|tea\s*room|patisserie/i
+
+export function classifyRestaurantOrCafe(name: string): 'Restaurant' | 'Cafe' {
+  return CAFE_KEYWORDS.test(name) ? 'Cafe' : 'Restaurant'
 }
 
 const NUMERIC_RATINGS = new Set(['0', '1', '2', '3', '4', '5'])

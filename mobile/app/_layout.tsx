@@ -1,13 +1,15 @@
-import { useEffect } from 'react'
-import { LogBox } from 'react-native'
+import { useEffect, useState } from 'react'
+import { View, ActivityIndicator, LogBox } from 'react-native'
 import { Stack, useRouter } from 'expo-router'
 import * as Notifications from 'expo-notifications'
 import { StatusBar } from 'expo-status-bar'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { ensureSession } from '@/lib/auth'
 import { useSession } from '@/hooks/useSession'
-import { configurePurchases, loginPurchases } from '@/lib/purchases'
+import { configurePurchases, loginPurchases, getIsEntitled } from '@/lib/purchases'
+import { PaywallGate } from '@/components/PaywallGate'
 import { restaurantIdFromNotificationResponse } from '@/lib/push'
+import { useTheme } from '@/theme/useTheme'
 
 if (__DEV__) {
   // Supabase's own background token-refresh timer (runs every ~30s for the
@@ -19,7 +21,9 @@ if (__DEV__) {
 }
 
 export default function RootLayout() {
-  const { session } = useSession()
+  const c = useTheme()
+  const { session, loading: sessionLoading } = useSession()
+  const [entitled, setEntitled] = useState<boolean | null>(null)
   const router = useRouter()
 
   // Deep-links a tapped score-change notification straight to that
@@ -49,21 +53,34 @@ export default function RootLayout() {
     })
   }, [])
 
-  // Links the RevenueCat customer to this Supabase user so Account's
-  // "Manage subscription" (Customer Center) works. The paywall gate itself
-  // is disabled for now — see PaywallGate.tsx / lib/purchases.ts to re-enable.
+  // Links the RevenueCat customer to this Supabase user, then checks
+  // entitlement — the whole app is gated behind the paywall until this
+  // resolves true (see PaywallGate.tsx for the purchase/restore flow).
   useEffect(() => {
     if (!session) return
-    loginPurchases(session.user.id)
+    ;(async () => {
+      await loginPurchases(session.user.id)
+      setEntitled(await getIsEntitled())
+    })()
   }, [session?.user.id])
+
+  const stillChecking = sessionLoading || (session && entitled === null)
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <StatusBar style="auto" />
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="restaurant/[id]" options={{ presentation: 'card' }} />
-      </Stack>
+      {stillChecking ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: c.bg }}>
+          <ActivityIndicator color={c.primary} />
+        </View>
+      ) : entitled === false ? (
+        <PaywallGate onUnlocked={() => setEntitled(true)} />
+      ) : (
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="restaurant/[id]" options={{ presentation: 'card' }} />
+        </Stack>
+      )}
     </GestureHandlerRootView>
   )
 }

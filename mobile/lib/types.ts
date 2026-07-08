@@ -65,18 +65,19 @@ export interface Review {
   created_at: string
 }
 
-// null = any rating (includes Awaiting/Exempt/etc), a number = numeric
-// rating >= this (excludes all non-numeric statuses), 'awaiting' = show only
-// places registered but never inspected. Mutually exclusive, same dropdown.
-export type RatingFilter = number | 'awaiting' | null
+export type RatingValue = 0 | 1 | 2 | 3 | 4 | 5 | 'awaiting'
 
 export interface BrowseFilters {
-  minRating: RatingFilter
+  // null/empty = "Any rating" (shows everything, numeric + non-numeric).
+  // Otherwise an exact-match, multi-select set — [5] shows only 5-rated
+  // places, [0, 5] shows 0s and 5s together, ['awaiting'] shows only places
+  // never inspected, etc.
+  ratings: RatingValue[] | null
   types: string[] | null // FSA business_type filter
 }
 
 export const EMPTY_FILTERS: BrowseFilters = {
-  minRating: null,
+  ratings: null,
   types: null,
 }
 

@@ -20,6 +20,13 @@ export interface Bounds {
   maxLat: number
 }
 
+// Maps the UI's rating selection to the exact rating_value strings stored in
+// the DB — null/empty means no filter (show everything).
+function toRatingValues(filters: BrowseFilters): string[] | null {
+  if (!filters.ratings || filters.ratings.length === 0) return null
+  return filters.ratings.map((r) => (r === 'awaiting' ? 'AwaitingInspection' : String(r)))
+}
+
 // Map viewport pins.
 export async function fetchPins(
   bounds: Bounds,
@@ -30,9 +37,8 @@ export async function fetchPins(
     min_lat: bounds.minLat,
     max_lng: bounds.maxLng,
     max_lat: bounds.maxLat,
-    min_rating: typeof filters.minRating === 'number' ? filters.minRating : null,
     types: filters.types,
-    only_awaiting: filters.minRating === 'awaiting',
+    rating_values: toRatingValues(filters),
   })
   if (error) throw error
   return (data ?? []) as RestaurantPin[]
@@ -48,9 +54,8 @@ export async function fetchNear(
     origin_lng: origin.lng,
     origin_lat: origin.lat,
     radius_m: radiusM,
-    min_rating: typeof filters.minRating === 'number' ? filters.minRating : null,
     types: filters.types,
-    only_awaiting: filters.minRating === 'awaiting',
+    rating_values: toRatingValues(filters),
   })
   if (error) throw error
   return (data ?? []) as RestaurantNear[]
@@ -74,10 +79,9 @@ export async function searchRestaurants(
     ? builder.ilike('postcode', `${q}%`)
     : builder.ilike('name', `%${q}%`)
 
-  if (filters.minRating === 'awaiting') {
-    builder = builder.eq('rating_value', 'AwaitingInspection')
-  } else if (typeof filters.minRating === 'number') {
-    builder = builder.eq('rating_is_numeric', true).gte('rating_value', String(filters.minRating))
+  const ratingValues = toRatingValues(filters)
+  if (ratingValues) {
+    builder = builder.in('rating_value', ratingValues)
   }
   if (filters.types && filters.types.length) {
     builder = builder.in('business_type', filters.types)

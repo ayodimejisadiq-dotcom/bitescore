@@ -3,72 +3,93 @@ import { View, Text, Pressable, Modal, StyleSheet } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/theme/useTheme'
 import { greyToGreen, NEUTRAL_RATING } from '@/theme/colors'
-import type { RatingFilter } from '@/lib/types'
+import type { RatingValue } from '@/lib/types'
 
-// "Any rating" (null) shows everything, including non-numeric FSA statuses
-// (Exempt / Awaiting). Picking 0–5 filters to numeric ratings >= that value —
-// 0 is a real, selectable choice, distinct from "Any". 'awaiting' is its own
-// tier: places registered but never inspected, shown to the exclusion of
-// everything else (same one-tap, mutually-exclusive behavior as the rest).
-const STEPS: RatingFilter[] = [null, 5, 4, 3, 2, 1, 0, 'awaiting']
+// Each row is an independent, multi-selectable exact match — picking 5 shows
+// only 5-rated places, picking 5 and 0 together shows both, picking Awaiting
+// shows only places never inspected. An empty selection ("Any rating") shows
+// everything, numeric and non-numeric alike.
+const STEPS: RatingValue[] = [5, 4, 3, 2, 1, 0, 'awaiting']
 
-function labelFor(v: RatingFilter): string {
-  if (v === null) return 'Any rating'
-  if (v === 'awaiting') return 'Awaiting'
-  return `${v}+ rated`
+function labelFor(v: RatingValue): string {
+  return v === 'awaiting' ? 'Awaiting' : `${v} rated`
 }
 
-function colorFor(v: RatingFilter, c: ReturnType<typeof useTheme>): string {
-  if (v === null) return c.border
-  if (v === 'awaiting') return NEUTRAL_RATING
-  return greyToGreen(v)
+function colorFor(v: RatingValue, c: ReturnType<typeof useTheme>): string {
+  return v === 'awaiting' ? NEUTRAL_RATING : greyToGreen(v)
+}
+
+function triggerLabel(selected: RatingValue[]): string {
+  if (selected.length === 0) return 'Any rating'
+  if (selected.length <= 2) return selected.map(labelFor).join(', ')
+  return `${selected.length} selected`
 }
 
 export function RatingDropdown({
   value,
   onChange,
 }: {
-  value: RatingFilter
-  onChange: (next: RatingFilter) => void
+  value: RatingValue[] | null
+  onChange: (next: RatingValue[] | null) => void
 }) {
   const c = useTheme()
   const [open, setOpen] = useState(false)
-  const swatch = colorFor(value, c)
+  const selected = value ?? []
+  const isAny = selected.length === 0
+
+  const toggle = (v: RatingValue) => {
+    const set = new Set(selected)
+    set.has(v) ? set.delete(v) : set.add(v)
+    onChange(set.size ? Array.from(set) : null)
+  }
 
   return (
     <>
       <Pressable
         onPress={() => setOpen(true)}
-        style={[styles.trigger, { backgroundColor: swatch, borderColor: swatch }]}
+        style={[
+          styles.trigger,
+          isAny
+            ? { backgroundColor: c.card, borderColor: c.border }
+            : { backgroundColor: c.primary, borderColor: c.primary },
+        ]}
       >
-        <Text style={[styles.triggerText, { color: value === null ? c.text : '#fff' }]}>
-          {labelFor(value)}
+        <Text style={[styles.triggerText, { color: isAny ? c.text : '#fff' }]}>
+          {triggerLabel(selected)}
         </Text>
-        <Ionicons name="chevron-down" size={14} color={value === null ? c.subtext : '#fff'} />
+        <Ionicons name="chevron-down" size={14} color={isAny ? c.subtext : '#fff'} />
       </Pressable>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable style={styles.backdrop} onPress={() => setOpen(false)}>
           <View style={[styles.card, { backgroundColor: c.card, borderColor: c.border }]}>
-            <Text style={[styles.title, { color: c.subtext }]}>Minimum hygiene rating</Text>
+            <Text style={[styles.title, { color: c.subtext }]}>Hygiene rating</Text>
+
+            <Pressable
+              onPress={() => {
+                onChange(null)
+                setOpen(false)
+              }}
+              style={styles.row}
+            >
+              <View style={[styles.swatch, { backgroundColor: c.border }]} />
+              <Text style={[styles.rowLabel, { color: c.text }]}>Any rating</Text>
+              {isAny ? (
+                <Ionicons name="checkmark" size={18} color={c.primary} style={styles.check} />
+              ) : null}
+            </Pressable>
+
             {STEPS.map((step) => {
-              const active = step === value
+              const active = selected.includes(step)
               const color = colorFor(step, c)
               return (
-                <Pressable
-                  key={String(step)}
-                  onPress={() => {
-                    onChange(step)
-                    setOpen(false)
-                  }}
-                  style={styles.row}
-                >
+                <Pressable key={String(step)} onPress={() => toggle(step)} style={styles.row}>
                   <View style={[styles.swatch, { backgroundColor: color }]}>
                     {typeof step === 'number' ? (
                       <Text style={styles.swatchText}>{step}</Text>
-                    ) : step === 'awaiting' ? (
+                    ) : (
                       <Ionicons name="hourglass-outline" size={13} color="#fff" />
-                    ) : null}
+                    )}
                   </View>
                   <Text style={[styles.rowLabel, { color: c.text }]}>{labelFor(step)}</Text>
                   {active ? (

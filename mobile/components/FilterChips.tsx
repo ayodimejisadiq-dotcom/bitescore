@@ -29,8 +29,8 @@ export function FilterChips({
       contentContainerStyle={styles.row}
     >
       <RatingDropdown
-        value={filters.minRating}
-        onChange={(minRating) => onChange({ ...filters, minRating })}
+        value={filters.ratings}
+        onChange={(ratings) => onChange({ ...filters, ratings })}
       />
       {DINING_BUSINESS_TYPES.map((t) => (
         <Chip

@@ -1,11 +1,13 @@
 import { useEffect } from 'react'
 import { LogBox } from 'react-native'
-import { Stack } from 'expo-router'
+import { Stack, useRouter } from 'expo-router'
+import * as Notifications from 'expo-notifications'
 import { StatusBar } from 'expo-status-bar'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { ensureSession } from '@/lib/auth'
 import { useSession } from '@/hooks/useSession'
 import { configurePurchases, loginPurchases } from '@/lib/purchases'
+import { restaurantIdFromNotificationResponse } from '@/lib/push'
 
 if (__DEV__) {
   // Supabase's own background token-refresh timer (runs every ~30s for the
@@ -18,6 +20,22 @@ if (__DEV__) {
 
 export default function RootLayout() {
   const { session } = useSession()
+  const router = useRouter()
+
+  // Deep-links a tapped score-change notification straight to that
+  // restaurant's detail page — covers both the app already running
+  // (foreground/background tap) and a cold start launched by the tap.
+  useEffect(() => {
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      const restaurantId = response && restaurantIdFromNotificationResponse(response)
+      if (restaurantId) router.push(`/restaurant/${restaurantId}`)
+    })
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const restaurantId = restaurantIdFromNotificationResponse(response)
+      if (restaurantId) router.push(`/restaurant/${restaurantId}`)
+    })
+    return () => sub.remove()
+  }, [router])
 
   // Silently establishes an anonymous session on first launch, so lists,
   // saves, and reviews work immediately with no sign-in screen. Adding an

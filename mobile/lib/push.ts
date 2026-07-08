@@ -33,3 +33,12 @@ export async function registerForPushNotifications(): Promise<
   if (error) return { ok: false, reason: error.message }
   return { ok: true }
 }
+
+// Pulls the restaurant id back out of a tapped score-change notification
+// (see server/api/cron/notify.ts, which sets data: { restaurantId }).
+export function restaurantIdFromNotificationResponse(
+  response: Notifications.NotificationResponse,
+): string | null {
+  const id = response.notification.request.content.data?.restaurantId
+  return typeof id === 'string' ? id : null
+}

@@ -25,6 +25,7 @@ export function FilterChips({
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
+      style={styles.scroll}
       contentContainerStyle={styles.row}
     >
       <RatingDropdown
@@ -69,7 +70,8 @@ function Chip({
 }
 
 const styles = StyleSheet.create({
-  row: { gap: 8, paddingHorizontal: 14, paddingVertical: 4 },
+  scroll: { flexGrow: 0 },
+  row: { gap: 8, paddingHorizontal: 14, paddingVertical: 4, alignItems: 'center' },
   chip: { paddingHorizontal: 13, paddingVertical: 8, borderRadius: 999, borderWidth: 1 },
   chipText: { fontSize: 13, fontWeight: '600' },
 })

@@ -3,7 +3,7 @@
     "name": "Bitescore",
     "slug": "bitescore",
     "scheme": "bitescore",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -16,6 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.bitescore.app",
+      "buildNumber": "15",
       "config": { "usesNonExemptEncryption": false },
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Bitescore uses your location to show hygiene ratings for places to eat near you."
@@ -23,6 +24,7 @@
     },
     "android": {
       "package": "com.bitescore.app",
+      "versionCode": 15,
       "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",

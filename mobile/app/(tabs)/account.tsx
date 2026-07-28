@@ -11,6 +11,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Linking,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
@@ -34,6 +35,7 @@ import {
 } from '@/lib/data'
 import { registerForPushNotifications } from '@/lib/push'
 import { errorMessage } from '@/lib/errors'
+import { PRIVACY_POLICY_URL, TERMS_OF_USE_URL } from '@/lib/legal'
 
 function initials(first: string | null, last: string | null): string {
   const a = first?.trim().charAt(0) ?? ''
@@ -305,6 +307,18 @@ function AccountEditor() {
             <Pressable onPress={() => RevenueCatUI.presentCustomerCenter()} style={styles.rowButton}>
               <Text style={{ color: c.text, fontSize: 15 }}>Manage subscription</Text>
               <Ionicons name="chevron-forward" size={18} color={c.subtext} />
+            </Pressable>
+          </Section>
+
+          <Section title="Legal" c={c}>
+            <Pressable onPress={() => Linking.openURL(PRIVACY_POLICY_URL)} style={styles.rowButton}>
+              <Text style={{ color: c.text, fontSize: 15 }}>Privacy Policy</Text>
+              <Ionicons name="open-outline" size={16} color={c.subtext} />
+            </Pressable>
+            <View style={[styles.divider, { backgroundColor: c.border }]} />
+            <Pressable onPress={() => Linking.openURL(TERMS_OF_USE_URL)} style={styles.rowButton}>
+              <Text style={{ color: c.text, fontSize: 15 }}>Terms of Use</Text>
+              <Ionicons name="open-outline" size={16} color={c.subtext} />
             </Pressable>
           </Section>
 

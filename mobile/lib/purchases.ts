@@ -27,10 +27,10 @@ export function configurePurchases(): void {
   if (__DEV__) {
     Purchases.setLogLevel(LOG_LEVEL.WARN)
     // The SDK auto-fetches offerings on configure and logs a full error if
-    // it fails — expected right now since the paywall/Test Store dashboard
-    // setup is deferred (see PaywallGate.tsx), and RN's LogBox turns any
-    // console.error into a blocking full-screen overlay. Downgrade this one
-    // known, harmless message to a plain log; let everything else through.
+    // it fails — expected in dev builds without a store connection, and RN's
+    // LogBox turns any console.error into a blocking full-screen overlay.
+    // Downgrade this one known message to a plain log (PaywallGate surfaces
+    // real offering failures to the user itself); let everything else through.
     Purchases.setLogHandler((_level, message) => {
       if (message.includes('Error fetching offerings')) return
       console.log(`[RevenueCat] ${message}`)

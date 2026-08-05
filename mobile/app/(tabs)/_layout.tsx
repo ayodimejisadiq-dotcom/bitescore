@@ -1,6 +1,7 @@
 import { Tabs } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/theme/useTheme'
+import { fonts } from '@/theme/type'
 
 export default function TabsLayout() {
   const c = useTheme()
@@ -9,15 +10,24 @@ export default function TabsLayout() {
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: c.primary,
-        tabBarInactiveTintColor: c.subtext,
-        tabBarStyle: { backgroundColor: c.card, borderTopColor: c.border },
+        tabBarInactiveTintColor: c.placeholder,
+        tabBarStyle: {
+          backgroundColor: c.card,
+          borderTopColor: c.border,
+          borderTopWidth: 1.5,
+          height: 88,
+          paddingTop: 8,
+        },
+        tabBarLabelStyle: { fontFamily: fonts.display600, fontSize: 12 },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: 'Map',
-          tabBarIcon: ({ color, size }) => <Ionicons name="map" size={size} color={color} />,
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'map' : 'map-outline'} size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
@@ -31,14 +41,18 @@ export default function TabsLayout() {
         name="lists"
         options={{
           title: 'Lists',
-          tabBarIcon: ({ color, size }) => <Ionicons name="bookmark" size={size} color={color} />,
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'bookmark' : 'bookmark-outline'} size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="account"
         options={{
           title: 'Account',
-          tabBarIcon: ({ color, size }) => <Ionicons name="person" size={size} color={color} />,
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'person' : 'person-outline'} size={size} color={color} />
+          ),
         }}
       />
     </Tabs>

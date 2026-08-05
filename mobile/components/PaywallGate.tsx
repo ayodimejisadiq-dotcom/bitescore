@@ -9,11 +9,15 @@ import {
   Linking,
   ScrollView,
 } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import { PACKAGE_TYPE, PRODUCT_CATEGORY, type PurchasesPackage } from 'react-native-purchases'
 import { useTheme } from '@/theme/useTheme'
+import { fonts } from '@/theme/type'
 import { getOfferings, purchasePackage, restorePurchases } from '@/lib/purchases'
 import { PRIVACY_POLICY_URL, TERMS_OF_USE_URL } from '@/lib/legal'
 import { errorMessage } from '@/lib/errors'
+import { EdgeButton, tileEdge } from './ui'
+import { BadgeFan } from './BadgeFan'
 
 // Native paywall built directly on the default RevenueCat Offering, rather
 // than the dashboard-configured RevenueCatUI paywall. App Review requires
@@ -38,17 +42,36 @@ const DISPLAY_ORDER: Partial<Record<PACKAGE_TYPE, number>> = {
   [PACKAGE_TYPE.LIFETIME]: 1,
 }
 
+const FEATURES: { title: string; body: string }[] = [
+  {
+    title: 'EAT WITH CONFIDENCE',
+    body: 'See official hygiene ratings for every restaurant, café and pub near you.',
+  },
+  {
+    title: 'SAVE YOUR GO-TOS',
+    body: 'Build lists of your favourite places so you never lose track of a good find.',
+  },
+  {
+    title: 'SCORE DROP ALERTS',
+    body: "Get notified the second a saved place's rating changes.",
+  },
+  {
+    title: 'HONEST REVIEWS',
+    body: "Read and leave real reviews from people who've actually eaten there.",
+  },
+]
+
 function priceLine(pkg: PurchasesPackage): string {
   const price = pkg.product.priceString
   switch (pkg.packageType) {
     case PACKAGE_TYPE.WEEKLY:
-      return `${price} / week`
+      return `${price} a week`
     case PACKAGE_TYPE.MONTHLY:
-      return `${price} / month`
+      return `${price} a month`
     case PACKAGE_TYPE.ANNUAL:
-      return `${price} / year`
+      return `${price} a year`
     case PACKAGE_TYPE.LIFETIME:
-      return `${price} once`
+      return price
     default:
       return price
   }
@@ -126,24 +149,40 @@ export function PaywallGate({ onUnlocked }: { onUnlocked: () => void }) {
 
   return (
     <View style={[styles.root, { backgroundColor: c.bg }]}>
-      <ScrollView contentContainerStyle={styles.scroll} bounces={false}>
-        <View style={[styles.badge, { backgroundColor: c.primary }]}>
-          <Text style={styles.badgeText}>5</Text>
-        </View>
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <BadgeFan />
         <Text style={[styles.title, { color: c.text }]}>Unlock Bitescore</Text>
         <Text style={[styles.subtitle, { color: c.subtext }]}>
-          Official UK hygiene ratings on a map,{'\n'}saved lists, and score-change alerts.
+          Official UK hygiene ratings, wherever you're eating.
         </Text>
 
+        <View style={styles.features}>
+          {FEATURES.map((f) => (
+            <View key={f.title} style={styles.feature}>
+              <Text style={[styles.featureTitle, { color: c.primary }]}>{f.title}</Text>
+              <Text style={[styles.featureBody, { color: c.inkSecondary }]}>{f.body}</Text>
+            </View>
+          ))}
+        </View>
+      </ScrollView>
+
+      <View style={[styles.footer, { backgroundColor: c.card, borderTopColor: c.border }]}>
         {packages === null && loadError === null ? (
-          <ActivityIndicator color={c.primary} style={{ marginTop: 36 }} />
+          <ActivityIndicator color={c.primary} style={{ marginVertical: 24 }} />
         ) : loadError !== null ? (
-          <View style={styles.errorBox}>
+          <>
             <Text style={[styles.errorText, { color: c.subtext }]}>{loadError}</Text>
-            <Pressable onPress={load} style={[styles.button, { backgroundColor: c.primary }]}>
-              <Text style={styles.buttonText}>Try again</Text>
-            </Pressable>
-          </View>
+            <EdgeButton
+              color={c.primary}
+              edgeColor={c.primaryDark}
+              edge={4}
+              radius={18}
+              onPress={load}
+              style={styles.cta}
+            >
+              <Text style={styles.ctaText}>Try again</Text>
+            </EdgeButton>
+          </>
         ) : (
           <>
             <View style={styles.plans}>
@@ -156,102 +195,119 @@ export function PaywallGate({ onUnlocked }: { onUnlocked: () => void }) {
                     style={[
                       styles.plan,
                       {
-                        backgroundColor: c.card,
-                        borderColor: active ? c.primary : c.border,
-                        borderWidth: active ? 2 : StyleSheet.hairlineWidth,
+                        backgroundColor: active ? c.primaryTint : c.bg,
+                        borderColor: active ? c.primary : c.controlBorder,
+                        borderWidth: active ? 2 : 1.5,
                       },
                     ]}
                   >
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.planTitle, { color: c.text }]}>{pkg.product.title}</Text>
-                      {LENGTH_LABEL[pkg.packageType] ? (
-                        <Text style={[styles.planLength, { color: c.subtext }]}>
-                          {LENGTH_LABEL[pkg.packageType]}
-                          {isAutoRenewing(pkg) ? ' · renews automatically' : ''}
-                        </Text>
-                      ) : null}
+                    <View style={styles.planHead}>
+                      <Text style={[styles.planTitle, { color: c.text }]} numberOfLines={1}>
+                        {pkg.product.title}
+                      </Text>
+                      <Ionicons
+                        name={active ? 'checkmark-circle' : 'ellipse-outline'}
+                        size={22}
+                        color={active ? c.primary : c.dashedBorderDark}
+                      />
                     </View>
                     <Text style={[styles.planPrice, { color: c.text }]}>{priceLine(pkg)}</Text>
+                    {LENGTH_LABEL[pkg.packageType] ? (
+                      <Text style={[styles.planLength, { color: c.mutedOnCard }]}>
+                        {LENGTH_LABEL[pkg.packageType]}
+                        {isAutoRenewing(pkg) ? ' · renews automatically' : ''}
+                      </Text>
+                    ) : null}
                   </Pressable>
                 )
               })}
             </View>
 
-            <Pressable
-              onPress={onBuy}
+            <EdgeButton
+              color={c.primary}
+              edgeColor={c.primaryDark}
+              edge={4}
+              radius={18}
               disabled={buying || !selectedPkg}
-              style={[styles.button, { backgroundColor: c.primary, opacity: buying ? 0.7 : 1 }]}
+              onPress={onBuy}
+              style={styles.cta}
             >
-              {buying ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Continue</Text>}
-            </Pressable>
+              {buying ? <ActivityIndicator color="#fff" /> : <Text style={styles.ctaText}>Continue</Text>}
+            </EdgeButton>
 
             {selectedPkg && isAutoRenewing(selectedPkg) ? (
-              <Text style={[styles.fineprint, { color: c.subtext }]}>
-                The yearly plan is an auto-renewing subscription. Payment is charged to your Apple
-                Account at confirmation, and it renews at {selectedPkg.product.priceString} per year
-                unless cancelled at least 24 hours before the end of the current period. Manage or
-                cancel anytime in your Apple Account settings.
+              <Text style={[styles.fineprint, { color: c.mutedOnCard }]}>
+                Auto-renewing subscription. Payment is charged to your Apple Account at
+                confirmation and renews at {selectedPkg.product.priceString} per year unless
+                cancelled at least 24 hours before the period ends. Manage or cancel anytime in
+                your Apple Account settings.
               </Text>
-            ) : null}
+            ) : (
+              <Text style={[styles.fineprint, { color: c.mutedOnCard }]}>
+                One-time purchase. Yours forever, no subscription.
+              </Text>
+            )}
           </>
         )}
 
-        <Pressable onPress={onRestore} disabled={restoring} style={styles.restore}>
-          {restoring ? (
-            <ActivityIndicator color={c.primary} />
-          ) : (
-            <Text style={[styles.restoreText, { color: c.primary }]}>Restore purchases</Text>
-          )}
-        </Pressable>
-
         <View style={styles.legalRow}>
-          <Pressable onPress={() => Linking.openURL(PRIVACY_POLICY_URL)} hitSlop={8}>
-            <Text style={[styles.legalLink, { color: c.subtext }]}>Privacy Policy</Text>
+          <Pressable onPress={onRestore} disabled={restoring} hitSlop={8}>
+            {restoring ? (
+              <ActivityIndicator size="small" color={c.primary} />
+            ) : (
+              <Text style={[styles.legalLink, { color: c.primary }]}>Restore Purchases</Text>
+            )}
           </Pressable>
-          <Text style={[styles.legalDot, { color: c.subtext }]}>·</Text>
           <Pressable onPress={() => Linking.openURL(TERMS_OF_USE_URL)} hitSlop={8}>
-            <Text style={[styles.legalLink, { color: c.subtext }]}>Terms of Use</Text>
+            <Text style={[styles.legalLink, { color: c.primary }]}>Terms</Text>
+          </Pressable>
+          <Pressable onPress={() => Linking.openURL(PRIVACY_POLICY_URL)} hitSlop={8}>
+            <Text style={[styles.legalLink, { color: c.primary }]}>Privacy</Text>
           </Pressable>
         </View>
-      </ScrollView>
+      </View>
     </View>
   )
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  scroll: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: 28 },
-  badge: { width: 64, height: 64, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
-  badgeText: { color: '#fff', fontSize: 32, fontWeight: '800' },
-  title: { fontSize: 28, fontWeight: '800', letterSpacing: -0.5, textAlign: 'center' },
-  subtitle: { fontSize: 15, textAlign: 'center', lineHeight: 22, marginTop: 10 },
-  plans: { width: '100%', gap: 12, marginTop: 30 },
-  plan: {
+  scroll: { paddingHorizontal: 24, paddingTop: 40, paddingBottom: 24, alignItems: 'center' },
+  title: { fontSize: 32, fontFamily: fonts.display800, letterSpacing: -0.6, textAlign: 'center' },
+  subtitle: {
+    fontSize: 15,
+    fontFamily: fonts.body,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginTop: 8,
+  },
+  features: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 28, rowGap: 20 },
+  feature: { width: '50%', paddingRight: 14 },
+  featureTitle: { fontSize: 11.5, fontFamily: fonts.display600, letterSpacing: 1.2 },
+  featureBody: { fontSize: 14.5, fontFamily: fonts.body, lineHeight: 20, marginTop: 5 },
+  footer: {
+    borderTopWidth: 1.5,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 28,
+  },
+  plans: { flexDirection: 'row', gap: 10 },
+  plan: { flex: 1, borderRadius: 18, paddingVertical: 13, paddingHorizontal: 14 },
+  planHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
+  planTitle: { flex: 1, fontSize: 15, fontFamily: fonts.display600 },
+  planPrice: { fontSize: 18, fontFamily: fonts.display800, marginTop: 4 },
+  planLength: { fontSize: 12, fontFamily: fonts.body, marginTop: 3 },
+  cta: { height: 56, alignItems: 'center', justifyContent: 'center', marginTop: 14 },
+  ctaText: { color: '#fff', fontSize: 17, fontFamily: fonts.display600 },
+  fineprint: { fontSize: 11.5, fontFamily: fonts.body, lineHeight: 16, textAlign: 'center', marginTop: 12 },
+  errorText: { fontSize: 14, fontFamily: fonts.body, lineHeight: 20, textAlign: 'center', marginTop: 8 },
+  legalRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    borderRadius: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 18,
+    justifyContent: 'center',
+    gap: 22,
+    marginTop: 14,
+    minHeight: 20,
   },
-  planTitle: { fontSize: 16, fontWeight: '700' },
-  planLength: { fontSize: 13, marginTop: 3 },
-  planPrice: { fontSize: 16, fontWeight: '700' },
-  button: {
-    marginTop: 18,
-    paddingVertical: 15,
-    paddingHorizontal: 36,
-    borderRadius: 16,
-    alignSelf: 'stretch',
-    alignItems: 'center',
-  },
-  buttonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  fineprint: { fontSize: 11.5, lineHeight: 16, textAlign: 'center', marginTop: 14 },
-  errorBox: { alignItems: 'center', marginTop: 30, alignSelf: 'stretch' },
-  errorText: { fontSize: 14, lineHeight: 20, textAlign: 'center' },
-  restore: { marginTop: 22, minHeight: 20, justifyContent: 'center' },
-  restoreText: { fontSize: 14, fontWeight: '600' },
-  legalRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14 },
-  legalLink: { fontSize: 12.5, textDecorationLine: 'underline' },
-  legalDot: { fontSize: 12.5 },
+  legalLink: { fontSize: 13, fontFamily: fonts.display600 },
 })

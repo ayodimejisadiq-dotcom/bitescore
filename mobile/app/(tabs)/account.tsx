@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import {
   View,
   Text,
@@ -15,9 +15,12 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
+import { useFocusEffect } from 'expo-router'
 import RevenueCatUI from 'react-native-purchases-ui'
 import { useTheme } from '@/theme/useTheme'
+import { fonts } from '@/theme/type'
 import { useSession } from '@/hooks/useSession'
+import { EdgeButton, tileEdge } from '@/components/ui'
 import {
   signOut,
   deleteMyAccount,
@@ -31,17 +34,14 @@ import {
   setUsername,
   getNotificationPrefs,
   setNotificationPrefs,
+  fetchMyLists,
   type Profile,
 } from '@/lib/data'
+import { getGameStats, type GameStats } from '@/lib/game'
 import { registerForPushNotifications } from '@/lib/push'
 import { errorMessage } from '@/lib/errors'
 import { PRIVACY_POLICY_URL, TERMS_OF_USE_URL } from '@/lib/legal'
-
-function initials(first: string | null, last: string | null): string {
-  const a = first?.trim().charAt(0) ?? ''
-  const b = last?.trim().charAt(0) ?? ''
-  return (a + b).toUpperCase() || '?'
-}
+import { scoreFill, scoreEdge } from '@/theme/colors'
 
 function memberSince(createdAt: string | undefined): string | null {
   if (!createdAt) return null
@@ -58,7 +58,7 @@ export default function AccountScreen() {
         <ActivityIndicator color={c.primary} />
         {!sessionLoading && !session ? (
           <Pressable onPress={() => ensureSession()} style={{ marginTop: 12 }}>
-            <Text style={{ color: c.primary }}>Retry</Text>
+            <Text style={{ color: c.primary, fontFamily: fonts.display600 }}>Retry</Text>
           </Pressable>
         ) : null}
       </View>
@@ -66,6 +66,75 @@ export default function AccountScreen() {
   }
 
   return <AccountEditor />
+}
+
+// The game layer's badge grid — earned tiles keep their score colours,
+// locked ones are dashed with a padlock.
+function BadgesCard({ stats, c }: { stats: GameStats; c: ReturnType<typeof useTheme> }) {
+  return (
+    <View style={[styles.card, { backgroundColor: c.card, borderColor: c.border }]}>
+      <View style={styles.badgesHead}>
+        <Text style={[styles.sectionLabel, { color: c.placeholder, marginBottom: 0 }]}>
+          BADGES · {stats.earnedCount} OF {stats.badges.length}
+        </Text>
+      </View>
+      <View style={styles.badgeGrid}>
+        {stats.badges.map((b) => {
+          const earned = b.earned
+          const fill =
+            b.kind === 'flame' ? c.accent : b.scoreText === '1' ? scoreFill['5'] : scoreFill['4']
+          const edge =
+            b.kind === 'flame' ? c.accentDark : b.scoreText === '1' ? scoreEdge['5'] : scoreEdge['4']
+          return (
+            <View key={b.id} style={styles.badgeCell}>
+              {earned ? (
+                <View style={[styles.badgeCircle, { backgroundColor: fill }, tileEdge(edge)]}>
+                  {b.kind === 'flame' ? (
+                    <Ionicons name="flame" size={18} color="#fff" />
+                  ) : (
+                    <Text style={styles.badgeNum}>{b.scoreText}</Text>
+                  )}
+                </View>
+              ) : (
+                <View
+                  style={[
+                    styles.badgeCircle,
+                    styles.badgeLocked,
+                    { backgroundColor: c.lockedFill, borderColor: c.dashedBorderDark },
+                  ]}
+                >
+                  <Ionicons name="lock-closed" size={14} color={c.disabled} />
+                </View>
+              )}
+              <Text
+                style={[styles.badgeCaption, { color: earned ? c.mutedOnCard : c.disabled }]}
+                numberOfLines={2}
+              >
+                {b.label}
+              </Text>
+            </View>
+          )
+        })}
+      </View>
+      {stats.nextProgress !== null ? (
+        <>
+          <View style={[styles.progressTrack, { backgroundColor: c.subtleFill }]}>
+            <View
+              style={[
+                styles.progressFill,
+                { backgroundColor: c.primary, width: `${Math.round(stats.nextProgress * 100)}%` },
+              ]}
+            />
+          </View>
+          {stats.nextCaption ? (
+            <Text style={[styles.progressCaption, { color: c.mutedOnCard }]}>
+              {stats.nextCaption}
+            </Text>
+          ) : null}
+        </>
+      ) : null}
+    </View>
+  )
 }
 
 function AccountEditor() {
@@ -86,25 +155,40 @@ function AccountEditor() {
   const [notifBusy, setNotifBusy] = useState(false)
   const [loadingPrefs, setLoadingPrefs] = useState(true)
 
-  useEffect(() => {
-    ;(async () => {
-      try {
-        const p = await getProfile()
-        setProfile(p)
-        setFirstName(p?.first_name ?? '')
-        setLastName(p?.last_name ?? '')
-      } catch {
-        /* leave blank */
-      }
-      try {
-        setNotifEnabled(await getNotificationPrefs())
-      } catch {
-        /* default stays true */
-      } finally {
-        setLoadingPrefs(false)
-      }
-    })()
-  }, [])
+  const [stats, setStats] = useState<GameStats | null>(null)
+  const [listCount, setListCount] = useState<number | null>(null)
+
+  useFocusEffect(
+    useCallback(() => {
+      ;(async () => {
+        try {
+          const p = await getProfile()
+          setProfile(p)
+          setFirstName((prev) => prev || (p?.first_name ?? ''))
+          setLastName((prev) => prev || (p?.last_name ?? ''))
+        } catch {
+          /* leave blank */
+        }
+        try {
+          setNotifEnabled(await getNotificationPrefs())
+        } catch {
+          /* default stays true */
+        } finally {
+          setLoadingPrefs(false)
+        }
+        try {
+          setStats(await getGameStats())
+        } catch {
+          /* game layer is best-effort */
+        }
+        try {
+          setListCount((await fetchMyLists()).length)
+        } catch {
+          /* leave null */
+        }
+      })()
+    }, []),
+  )
 
   const onSaveName = async () => {
     if (!firstName.trim() || !lastName.trim()) return
@@ -193,53 +277,90 @@ function AccountEditor() {
     )
   }
 
+  const initial = (profile?.username ?? profile?.first_name ?? 'B').trim().charAt(0).toUpperCase() || 'B'
+
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <SafeAreaView edges={['top']} style={[styles.root, { backgroundColor: c.bg }]}>
-        <ScrollView contentContainerStyle={{ paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 14, paddingBottom: 60 }}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Identity */}
           <View style={styles.head}>
-            <View style={[styles.avatar, { backgroundColor: c.primary }]}>
-              <Text style={styles.avatarText}>{initials(profile?.first_name ?? null, profile?.last_name ?? null)}</Text>
+            <View style={[styles.avatar, { backgroundColor: c.primary }, tileEdge(c.primaryDark, 4)]}>
+              <Text style={styles.avatarText}>{initial}</Text>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.title, { color: c.text }]}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[styles.title, { color: c.text }]} numberOfLines={1}>
                 {profile?.username ? `@${profile.username}` : 'Account'}
               </Text>
               {memberSince(session?.user?.created_at) ? (
-                <Text style={[styles.subtitle, { color: c.subtext }]}>
+                <Text style={[styles.subtitle, { color: c.mutedOnCard }]}>
                   Member since {memberSince(session?.user?.created_at)}
                 </Text>
               ) : null}
             </View>
           </View>
 
-          <Section title="Profile" c={c}>
-            <TextInput
-              value={firstName}
-              onChangeText={setFirstName}
-              placeholder="First name"
-              placeholderTextColor={c.subtext}
-              style={[styles.input, { backgroundColor: c.bg, color: c.text, borderColor: c.border }]}
-            />
-            <TextInput
-              value={lastName}
-              onChangeText={setLastName}
-              placeholder="Last name"
-              placeholderTextColor={c.subtext}
-              style={[styles.input, { backgroundColor: c.bg, color: c.text, borderColor: c.border }]}
-            />
-            <Pressable
-              onPress={onSaveName}
+          {/* Game layer stats */}
+          {stats ? (
+            <View style={styles.statRow}>
+              <View style={[styles.statCard, { backgroundColor: c.text }]}>
+                <Text style={styles.statNumOnDark}>{stats.placesChecked}</Text>
+                <Text style={[styles.statLabel, { color: c.onDarkMuted }]}>places checked</Text>
+              </View>
+              <View style={[styles.statCard, { backgroundColor: c.accent }, tileEdge(c.accentDark)]}>
+                <Text style={styles.statNumOnDark}>{stats.weekStreak}</Text>
+                <Text style={[styles.statLabel, { color: 'rgba(255,255,255,0.85)' }]}>
+                  week streak
+                </Text>
+              </View>
+              <View style={[styles.statCard, { backgroundColor: c.card, borderWidth: 1.5, borderColor: c.border }]}>
+                <Text style={[styles.statNumOnDark, { color: c.text }]}>{listCount ?? '–'}</Text>
+                <Text style={[styles.statLabel, { color: c.mutedOnCard }]}>
+                  {listCount === 1 ? 'list' : 'lists'}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
+          {stats ? <BadgesCard stats={stats} c={c} /> : null}
+
+          {/* Your details */}
+          <Text style={[styles.sectionLabel, { color: c.placeholder }]}>YOUR DETAILS</Text>
+          <View style={[styles.card, { backgroundColor: c.card, borderColor: c.border }]}>
+            <View style={styles.nameRow}>
+              <TextInput
+                value={firstName}
+                onChangeText={setFirstName}
+                placeholder="First name"
+                placeholderTextColor={c.disabled}
+                style={[styles.input, { backgroundColor: c.bg, color: c.text, borderColor: c.rowBorder, flex: 1 }]}
+              />
+              <TextInput
+                value={lastName}
+                onChangeText={setLastName}
+                placeholder="Last name"
+                placeholderTextColor={c.disabled}
+                style={[styles.input, { backgroundColor: c.bg, color: c.text, borderColor: c.rowBorder, flex: 1 }]}
+              />
+            </View>
+            <EdgeButton
+              color={c.primary}
+              edgeColor={c.primaryDark}
+              radius={15}
               disabled={savingName || !firstName.trim() || !lastName.trim()}
-              style={[styles.buttonSmall, { backgroundColor: c.primary, opacity: savingName ? 0.6 : 1 }]}
+              onPress={onSaveName}
+              style={styles.saveBtn}
             >
-              {savingName ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Save name</Text>}
-            </Pressable>
-            <Text style={[styles.hint, { color: c.subtext }]}>
-              Only your username is shown publicly on reviews — never your real name.
+              {savingName ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Save</Text>}
+            </EdgeButton>
+            <Text style={[styles.hint, { color: c.mutedOnCard }]}>
+              Reviews only ever show your username, never your real name.
             </Text>
 
-            <View style={[styles.divider, { backgroundColor: c.border }]} />
+            <View style={[styles.divider, { backgroundColor: c.rowBorder }]} />
 
             {editingUsername ? (
               <>
@@ -247,20 +368,22 @@ function AccountEditor() {
                   value={usernameInput}
                   onChangeText={setUsernameInput}
                   placeholder="username"
-                  placeholderTextColor={c.subtext}
+                  placeholderTextColor={c.disabled}
                   autoCapitalize="none"
                   autoCorrect={false}
-                  style={[styles.input, { backgroundColor: c.bg, color: c.text, borderColor: c.border }]}
+                  style={[styles.input, { backgroundColor: c.bg, color: c.text, borderColor: c.rowBorder }]}
                 />
-                <View style={{ flexDirection: 'row', gap: 12 }}>
+                <View style={{ flexDirection: 'row', gap: 12, marginTop: 10 }}>
                   <Pressable onPress={() => setEditingUsername(false)} style={styles.rowButton}>
-                    <Text style={{ color: c.subtext, fontSize: 14 }}>Cancel</Text>
+                    <Text style={{ color: c.mutedOnCard, fontSize: 14, fontFamily: fonts.body }}>Cancel</Text>
                   </Pressable>
                   <Pressable onPress={onSaveUsername} disabled={savingUsername} style={styles.rowButton}>
                     {savingUsername ? (
                       <ActivityIndicator color={c.primary} />
                     ) : (
-                      <Text style={{ color: c.primary, fontSize: 14, fontWeight: '700' }}>Save username</Text>
+                      <Text style={{ color: c.primary, fontSize: 14, fontFamily: fonts.display600 }}>
+                        Save username
+                      </Text>
                     )}
                   </Pressable>
                 </View>
@@ -276,65 +399,77 @@ function AccountEditor() {
                 <Text style={[styles.rowLabel, { color: c.text }]}>
                   Username: {profile?.username ? `@${profile.username}` : '—'}
                 </Text>
-                <Ionicons name="pencil" size={16} color={c.subtext} />
+                <Ionicons name="pencil" size={16} color={c.mutedOnCard} />
               </Pressable>
             )}
-          </Section>
+          </View>
 
-          <Section title="Email" c={c}>
+          {/* Email */}
+          <Text style={[styles.sectionLabel, { color: c.placeholder }]}>EMAIL</Text>
+          <View style={[styles.card, { backgroundColor: c.card, borderColor: c.border }]}>
             {hasEmail ? (
               <Text style={[styles.rowLabel, { color: c.text }]}>{session?.user?.email}</Text>
             ) : (
               <EmailUpgrade c={c} />
             )}
-          </Section>
+          </View>
 
-          <Section title="Notifications" c={c}>
+          {/* Alerts */}
+          <View style={[styles.card, styles.cardSpaced, { backgroundColor: c.card, borderColor: c.border }]}>
             <View style={styles.row}>
-              <Text style={[styles.rowLabel, { color: c.text }]}>Score-change alerts</Text>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={[styles.rowTitle, { color: c.text }]}>Score-change alerts</Text>
+                <Text style={[styles.hint, { color: c.mutedOnCard, marginTop: 2 }]}>
+                  We'll ping you if a saved place is re-inspected.
+                </Text>
+              </View>
               {loadingPrefs ? (
                 <ActivityIndicator color={c.primary} />
               ) : (
-                <Switch value={notifEnabled} onValueChange={onToggleNotif} disabled={notifBusy} />
+                <Switch
+                  value={notifEnabled}
+                  onValueChange={onToggleNotif}
+                  disabled={notifBusy}
+                  trackColor={{ true: '#5EA632', false: c.dashedBorder }}
+                  thumbColor="#fff"
+                />
               )}
             </View>
-            <Text style={[styles.hint, { color: c.subtext }]}>
-              Get notified when a place on one of your lists gets a new hygiene score.
-            </Text>
-          </Section>
+          </View>
 
-          <Section title="Subscription" c={c}>
-            <Pressable onPress={() => RevenueCatUI.presentCustomerCenter()} style={styles.rowButton}>
-              <Text style={{ color: c.text, fontSize: 15 }}>Manage subscription</Text>
-              <Ionicons name="chevron-forward" size={18} color={c.subtext} />
+          {/* Subscription */}
+          <View style={[styles.card, styles.cardSpaced, { backgroundColor: c.card, borderColor: c.border }]}>
+            <Pressable onPress={() => RevenueCatUI.presentCustomerCenter()} style={styles.row}>
+              <Text style={[styles.rowTitle, { color: c.text }]}>Manage subscription</Text>
+              <Ionicons name="chevron-forward" size={18} color={c.disabled} />
             </Pressable>
-          </Section>
+          </View>
 
-          <Section title="Legal" c={c}>
-            <Pressable onPress={() => Linking.openURL(PRIVACY_POLICY_URL)} style={styles.rowButton}>
-              <Text style={{ color: c.text, fontSize: 15 }}>Privacy Policy</Text>
-              <Ionicons name="open-outline" size={16} color={c.subtext} />
+          {/* Legal */}
+          <View style={[styles.card, styles.cardSpaced, { backgroundColor: c.card, borderColor: c.border }]}>
+            <Pressable onPress={() => Linking.openURL(PRIVACY_POLICY_URL)} style={styles.row}>
+              <Text style={[styles.rowTitle, { color: c.text }]}>Privacy Policy</Text>
+              <Ionicons name="open-outline" size={16} color={c.disabled} />
             </Pressable>
-            <View style={[styles.divider, { backgroundColor: c.border }]} />
-            <Pressable onPress={() => Linking.openURL(TERMS_OF_USE_URL)} style={styles.rowButton}>
-              <Text style={{ color: c.text, fontSize: 15 }}>Terms of Use</Text>
-              <Ionicons name="open-outline" size={16} color={c.subtext} />
+            <View style={[styles.divider, { backgroundColor: c.rowBorder }]} />
+            <Pressable onPress={() => Linking.openURL(TERMS_OF_USE_URL)} style={styles.row}>
+              <Text style={[styles.rowTitle, { color: c.text }]}>Terms of Use</Text>
+              <Ionicons name="open-outline" size={16} color={c.disabled} />
             </Pressable>
-          </Section>
+          </View>
 
-          <Section title="Session" c={c}>
-            <Pressable onPress={onSignOut} style={styles.rowButton}>
-              <Text style={{ color: c.text, fontSize: 15 }}>Sign out</Text>
-              <Ionicons name="chevron-forward" size={18} color={c.subtext} />
+          {/* Session */}
+          <View style={[styles.card, styles.cardSpaced, { backgroundColor: c.card, borderColor: c.border }]}>
+            <Pressable onPress={onSignOut} style={styles.row}>
+              <Text style={[styles.rowTitle, { color: c.text }]}>Sign out</Text>
+              <Ionicons name="chevron-forward" size={18} color={c.disabled} />
             </Pressable>
-          </Section>
-
-          <Section title="Account" c={c}>
-            <Pressable onPress={onDeleteAccount} style={styles.rowButton}>
-              <Text style={{ color: '#E4572E', fontSize: 15 }}>Delete account</Text>
-              <Ionicons name="chevron-forward" size={18} color={c.subtext} />
+            <View style={[styles.divider, { backgroundColor: c.rowBorder }]} />
+            <Pressable onPress={onDeleteAccount} style={styles.row}>
+              <Text style={[styles.rowTitle, { color: '#E24B29' }]}>Delete account</Text>
+              <Ionicons name="chevron-forward" size={18} color={c.disabled} />
             </Pressable>
-          </Section>
+          </View>
         </ScrollView>
       </SafeAreaView>
     </KeyboardAvoidingView>
@@ -380,7 +515,7 @@ function EmailUpgrade({ c }: { c: ReturnType<typeof useTheme> }) {
 
   return (
     <View>
-      <Text style={[styles.hint, { color: c.subtext, marginBottom: 10 }]}>
+      <Text style={[styles.hint, { color: c.mutedOnCard, marginBottom: 10, marginTop: 0 }]}>
         Add an email so you never lose your lists and reviews if you switch phones.
       </Text>
       {stage === 'email' ? (
@@ -389,50 +524,49 @@ function EmailUpgrade({ c }: { c: ReturnType<typeof useTheme> }) {
             value={email}
             onChangeText={setEmail}
             placeholder="you@example.com"
-            placeholderTextColor={c.subtext}
+            placeholderTextColor={c.disabled}
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="email-address"
-            style={[styles.input, { backgroundColor: c.bg, color: c.text, borderColor: c.border }]}
+            style={[styles.input, { backgroundColor: c.bg, color: c.text, borderColor: c.rowBorder }]}
           />
-          <Pressable
-            onPress={onSend}
+          <EdgeButton
+            color={c.primary}
+            edgeColor={c.primaryDark}
+            radius={15}
             disabled={busy || !email.trim()}
-            style={[styles.buttonSmall, { backgroundColor: c.primary, opacity: busy ? 0.6 : 1 }]}
+            onPress={onSend}
+            style={styles.saveBtn}
           >
-            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Send me a code</Text>}
-          </Pressable>
+            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Send me a code</Text>}
+          </EdgeButton>
         </>
       ) : (
         <>
-          <Text style={[styles.hint, { color: c.subtext }]}>Enter the 6-digit code sent to {email}</Text>
+          <Text style={[styles.hint, { color: c.mutedOnCard, marginBottom: 8 }]}>
+            Enter the 6-digit code sent to {email}
+          </Text>
           <TextInput
             value={code}
             onChangeText={setCode}
             placeholder="123456"
-            placeholderTextColor={c.subtext}
+            placeholderTextColor={c.disabled}
             keyboardType="number-pad"
-            style={[styles.input, { backgroundColor: c.bg, color: c.text, borderColor: c.border }]}
+            style={[styles.input, { backgroundColor: c.bg, color: c.text, borderColor: c.rowBorder }]}
           />
-          <Pressable
-            onPress={onConfirm}
+          <EdgeButton
+            color={c.primary}
+            edgeColor={c.primaryDark}
+            radius={15}
             disabled={busy || !code.trim()}
-            style={[styles.buttonSmall, { backgroundColor: c.primary, opacity: busy ? 0.6 : 1 }]}
+            onPress={onConfirm}
+            style={styles.saveBtn}
           >
-            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Confirm</Text>}
-          </Pressable>
+            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Confirm</Text>}
+          </EdgeButton>
         </>
       )}
-      {error ? <Text style={[styles.error, { color: '#E4572E' }]}>{error}</Text> : null}
-    </View>
-  )
-}
-
-function Section({ title, c, children }: { title: string; c: ReturnType<typeof useTheme>; children: React.ReactNode }) {
-  return (
-    <View style={styles.section}>
-      <Text style={[styles.sectionTitle, { color: c.subtext }]}>{title}</Text>
-      <View style={[styles.card, { backgroundColor: c.card, borderColor: c.border }]}>{children}</View>
+      {error ? <Text style={[styles.error, { color: '#E24B29' }]}>{error}</Text> : null}
     </View>
   )
 }
@@ -440,47 +574,62 @@ function Section({ title, c, children }: { title: string; c: ReturnType<typeof u
 const styles = StyleSheet.create({
   root: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  head: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 4,
-  },
-  avatar: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: '#fff', fontWeight: '800', fontSize: 18 },
-  title: { fontSize: 24, fontWeight: '800', letterSpacing: -0.5 },
-  subtitle: { fontSize: 13, marginTop: 2 },
-  input: {
-    width: '100%',
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
-    marginBottom: 10,
-  },
-  buttonSmall: {
-    paddingVertical: 11,
-    borderRadius: 12,
+  head: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingBottom: 4 },
+  avatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  buttonText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  error: { fontSize: 13, textAlign: 'center', marginTop: 8 },
-  section: { marginTop: 22, paddingHorizontal: 20 },
-  sectionTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    marginBottom: 8,
+  avatarText: { color: '#fff', fontFamily: fonts.display800, fontSize: 26 },
+  title: { fontSize: 25, fontFamily: fonts.display800, letterSpacing: -0.4 },
+  subtitle: { fontSize: 13.5, fontFamily: fonts.body, marginTop: 2 },
+  statRow: { flexDirection: 'row', gap: 9, marginTop: 16 },
+  statCard: { flex: 1, borderRadius: 19, padding: 13 },
+  statNumOnDark: { color: '#fff', fontSize: 28, fontFamily: fonts.display800, lineHeight: 30 },
+  statLabel: { fontSize: 12, fontFamily: fonts.body, marginTop: 2 },
+  card: { borderRadius: 20, borderWidth: 1.5, padding: 16, marginTop: 14 },
+  cardSpaced: {},
+  badgesHead: { marginBottom: 12 },
+  badgeGrid: { flexDirection: 'row', gap: 9 },
+  badgeCell: { flex: 1, alignItems: 'center', gap: 5 },
+  badgeCircle: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  card: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, padding: 14, gap: 4 },
+  badgeLocked: { borderWidth: 1.5, borderStyle: 'dashed' },
+  badgeNum: { color: '#fff', fontFamily: fonts.display800, fontSize: 15 },
+  badgeCaption: { fontSize: 9.5, fontFamily: fonts.body, textAlign: 'center', lineHeight: 12 },
+  progressTrack: { height: 8, borderRadius: 4, marginTop: 14, overflow: 'hidden' },
+  progressFill: { height: '100%', borderRadius: 4 },
+  progressCaption: { fontSize: 12.5, fontFamily: fonts.body, marginTop: 7 },
+  sectionLabel: {
+    fontSize: 11.5,
+    fontFamily: fonts.display600,
+    letterSpacing: 1.5,
+    marginTop: 18,
+    marginBottom: -5,
+  },
+  nameRow: { flexDirection: 'row', gap: 9 },
+  input: {
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    paddingHorizontal: 14,
+    fontSize: 15,
+    fontFamily: fonts.body,
+  },
+  saveBtn: { marginTop: 11, height: 50, alignItems: 'center', justifyContent: 'center' },
+  saveBtnText: { color: '#fff', fontFamily: fonts.display600, fontSize: 16 },
+  hint: { fontSize: 12.5, fontFamily: fonts.body, lineHeight: 18, marginTop: 10 },
+  divider: { height: 1.5, marginVertical: 12 },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  rowLabel: { fontSize: 15, fontWeight: '500' },
-  hint: { fontSize: 12.5, lineHeight: 18, marginTop: 4 },
-  rowButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 2 },
-  divider: { height: StyleSheet.hairlineWidth, marginVertical: 12 },
+  rowLabel: { fontSize: 15, fontFamily: fonts.bodyMedium },
+  rowTitle: { fontSize: 16.5, fontFamily: fonts.display600 },
+  rowButton: { flexDirection: 'row', alignItems: 'center', paddingVertical: 2 },
+  error: { fontSize: 13, fontFamily: fonts.body, textAlign: 'center', marginTop: 8 },
 })

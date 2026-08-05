@@ -1,22 +1,29 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   View,
   Text,
   TextInput,
   FlatList,
+  Pressable,
   StyleSheet,
   ActivityIndicator,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import * as Location from 'expo-location'
 import { useRouter } from 'expo-router'
+import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/theme/useTheme'
+import { fonts } from '@/theme/type'
 import { RestaurantRow } from '@/components/RestaurantRow'
 import { FilterChips } from '@/components/FilterChips'
+import { BadgeFan } from '@/components/BadgeFan'
 import { useFilters } from '@/hooks/useFilters'
 import { fetchNear, searchRestaurants } from '@/lib/data'
+import { isNumericRating } from '@/lib/fsa'
 import { errorMessage } from '@/lib/errors'
 import type { BrowseFilters, RestaurantNear } from '@/lib/types'
+
+type Sort = 'closest' | 'score'
 
 export default function SearchScreen() {
   const c = useTheme()
@@ -25,6 +32,7 @@ export default function SearchScreen() {
   const [results, setResults] = useState<RestaurantNear[]>([])
   const [loading, setLoading] = useState(false)
   const [nearbyMode, setNearbyMode] = useState(true)
+  const [sort, setSort] = useState<Sort>('closest')
   const [error, setError] = useState<string | null>(null)
   const [filters, setFilters, filtersLoaded] = useFilters()
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -98,18 +106,31 @@ export default function SearchScreen() {
       .finally(() => setLoading(false))
   }
 
+  // Local re-sort only — "closest" preserves the server's distance order.
+  const sorted = useMemo(() => {
+    if (sort === 'closest') return results
+    return [...results].sort((a, b) => {
+      const av = isNumericRating(a.rating_value) ? Number(a.rating_value) : -1
+      const bv = isNumericRating(b.rating_value) ? Number(b.rating_value) : -1
+      return bv - av
+    })
+  }, [results, sort])
+
   return (
     <SafeAreaView edges={['top']} style={[styles.root, { backgroundColor: c.bg }]}>
       <View style={styles.head}>
-        <TextInput
-          value={query}
-          onChangeText={onChange}
-          placeholder="Search places or a postcode"
-          placeholderTextColor={c.subtext}
-          autoCapitalize="none"
-          autoCorrect={false}
-          style={[styles.input, { backgroundColor: c.card, color: c.text, borderColor: c.border }]}
-        />
+        <View style={[styles.search, { backgroundColor: c.card, borderColor: c.controlBorder }]}>
+          <Ionicons name="search" size={19} color={c.primary} />
+          <TextInput
+            value={query}
+            onChangeText={onChange}
+            placeholder="Search places or a postcode"
+            placeholderTextColor={c.placeholder}
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={[styles.input, { color: c.text }]}
+          />
+        </View>
       </View>
       <FilterChips filters={filters} onChange={onFiltersChange} />
       {error ? (
@@ -121,19 +142,34 @@ export default function SearchScreen() {
         <ActivityIndicator style={{ marginTop: 24 }} color={c.primary} />
       ) : (
         <FlatList
-          data={results}
+          data={sorted}
           keyExtractor={(item) => item.id}
+          contentContainerStyle={{ paddingTop: 12, paddingBottom: 24 }}
           ListHeaderComponent={
-            <Text style={[styles.section, { color: c.subtext }]}>
-              {nearbyMode ? 'Near you' : `Results for “${query.trim()}”`}
-            </Text>
+            <View style={styles.sectionRow}>
+              <Text style={[styles.section, { color: c.placeholder }]}>
+                {nearbyMode ? 'NEAR YOU' : `RESULTS FOR “${query.trim().toUpperCase()}”`}
+              </Text>
+              <Pressable
+                onPress={() => setSort(sort === 'closest' ? 'score' : 'closest')}
+                hitSlop={8}
+              >
+                <Text style={[styles.sort, { color: c.primary }]}>
+                  Sort: {sort === 'closest' ? 'closest' : 'score'}
+                </Text>
+              </Pressable>
+            </View>
           }
           ListEmptyComponent={
-            <Text style={[styles.empty, { color: c.subtext }]}>
-              {nearbyMode
-                ? 'Turn on location, or search by name or postcode.'
-                : 'No matches. Try a different spelling or a postcode.'}
-            </Text>
+            <View style={styles.empty}>
+              <BadgeFan />
+              <Text style={[styles.emptyTitle, { color: c.text }]}>Nothing here yet</Text>
+              <Text style={[styles.emptyBody, { color: c.subtext }]}>
+                {nearbyMode
+                  ? 'Turn on location, or search by name or postcode.'
+                  : 'No matches — try a different spelling or a wider area.'}
+              </Text>
+            </View>
           }
           renderItem={({ item }) => (
             <RestaurantRow item={item} onPress={() => router.push(`/restaurant/${item.id}`)} />
@@ -146,25 +182,41 @@ export default function SearchScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  head: { paddingHorizontal: 14, paddingTop: 6, paddingBottom: 8 },
-  input: {
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
+  head: { paddingHorizontal: 14, paddingTop: 6, paddingBottom: 11 },
+  search: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 15,
+    height: 50,
+    borderRadius: 17,
+    borderWidth: 1.5,
+  },
+  input: { flex: 1, fontSize: 16, fontFamily: fonts.body, padding: 0 },
+  sectionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
   },
   section: {
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 4,
+    fontSize: 11.5,
+    fontFamily: fonts.display600,
+    letterSpacing: 1.5,
   },
-  empty: { textAlign: 'center', marginTop: 40, paddingHorizontal: 40, fontSize: 15, lineHeight: 22 },
+  sort: { fontSize: 12.5, fontFamily: fonts.bodyMedium },
+  empty: { alignItems: 'center', marginTop: 48, paddingHorizontal: 40 },
+  emptyTitle: { fontSize: 24, fontFamily: fonts.display800 },
+  emptyBody: {
+    fontSize: 15,
+    fontFamily: fonts.body,
+    textAlign: 'center',
+    lineHeight: 23,
+    marginTop: 8,
+    maxWidth: 280,
+  },
   errorBox: { marginTop: 40, paddingHorizontal: 32, alignItems: 'center', gap: 6 },
-  errorTitle: { fontSize: 16, fontWeight: '700' },
-  errorDetail: { fontSize: 13, textAlign: 'center', lineHeight: 19 },
+  errorTitle: { fontSize: 16, fontFamily: fonts.display600 },
+  errorDetail: { fontSize: 13, fontFamily: fonts.body, textAlign: 'center', lineHeight: 19 },
 })

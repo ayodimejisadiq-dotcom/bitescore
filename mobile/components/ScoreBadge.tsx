@@ -1,24 +1,30 @@
 import { View, Text, StyleSheet } from 'react-native'
-import { colorForRating } from '@/theme/colors'
+import { colorForRating, edgeForRating } from '@/theme/colors'
+import { fonts } from '@/theme/type'
 import { isNumericRating, ratingLabel } from '@/lib/fsa'
+import { tileEdge } from './ui'
 
-// The signature Bitescore element: a rounded square, coloured by score, with
-// the number front and centre. Non-numeric statuses (Exempt, Awaiting…) render
-// as a short label instead.
+// The signature Bitescore element: a rounded score tile with a hard dark
+// bottom edge so it reads as a physical object. Non-numeric statuses
+// (Exempt, Awaiting…) render as a neutral tile with a short label.
 export function ScoreBadge({
   rating,
-  size = 44,
+  size = 46,
+  edge = true,
 }: {
   rating: string
   size?: number
+  edge?: boolean
 }) {
   const numeric = isNumericRating(rating)
   const bg = colorForRating(rating)
+  const edgeHeight = size >= 60 ? 4 : 3
   return (
     <View
       style={[
         styles.badge,
-        { backgroundColor: bg, width: size, height: size, borderRadius: size * 0.3 },
+        { backgroundColor: bg, width: size, height: size, borderRadius: size * 0.34 },
+        edge ? tileEdge(edgeForRating(rating), edgeHeight) : null,
       ]}
       accessible
       accessibilityLabel={`Hygiene rating ${ratingLabel(rating)}`}
@@ -36,6 +42,12 @@ export function ScoreBadge({
 
 const styles = StyleSheet.create({
   badge: { alignItems: 'center', justifyContent: 'center' },
-  num: { color: '#fff', fontWeight: '800' },
-  mini: { color: '#fff', fontWeight: '700', fontSize: 9, textAlign: 'center', paddingHorizontal: 2 },
+  num: { color: '#fff', fontFamily: fonts.display800 },
+  mini: {
+    color: '#fff',
+    fontFamily: fonts.display600,
+    fontSize: 9,
+    textAlign: 'center',
+    paddingHorizontal: 2,
+  },
 })

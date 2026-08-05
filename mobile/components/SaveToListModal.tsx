@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { View, Text, TextInput, Pressable, Modal, FlatList, ActivityIndicator, StyleSheet } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/theme/useTheme'
+import { fonts } from '@/theme/type'
+import { EdgeButton } from './ui'
 import { useSession } from '@/hooks/useSession'
 import { ensureSession } from '@/lib/auth'
 import { fetchMyLists, createList, addToList, removeFromList, listIdsContaining } from '@/lib/data'
@@ -78,13 +80,16 @@ export function SaveToListModal({
         <Pressable style={styles.backdrop} onPress={onClose}>
           <View style={[styles.card, { backgroundColor: c.card }]}>
             <Text style={[styles.title, { color: c.text }]}>Couldn’t connect</Text>
-            <Text style={[styles.p, { color: c.subtext }]}>Check your connection and try again.</Text>
-            <Pressable
-              style={[styles.primaryBtn, { backgroundColor: c.primary }]}
+            <Text style={[styles.p, { color: c.mutedOnCard }]}>Check your connection and try again.</Text>
+            <EdgeButton
+              color={c.primary}
+              edgeColor={c.primaryDark}
+              radius={16}
               onPress={() => ensureSession()}
+              style={styles.primaryBtn}
             >
               <Text style={styles.primaryBtnText}>Retry</Text>
-            </Pressable>
+            </EdgeButton>
           </View>
         </Pressable>
       </Modal>
@@ -104,7 +109,7 @@ export function SaveToListModal({
               keyExtractor={(l) => l.id}
               style={{ maxHeight: 260 }}
               ListEmptyComponent={
-                <Text style={[styles.p, { color: c.subtext, marginVertical: 12 }]}>
+                <Text style={[styles.p, { color: c.mutedOnCard, marginVertical: 12 }]}>
                   No lists yet — create one below.
                 </Text>
               }
@@ -126,7 +131,7 @@ export function SaveToListModal({
               value={newName}
               onChangeText={setNewName}
               placeholder="New list name"
-              placeholderTextColor={c.subtext}
+              placeholderTextColor={c.disabled}
               style={[styles.input, { backgroundColor: c.bg, color: c.text, borderColor: c.border }]}
               onSubmitEditing={onCreateAndAdd}
             />
@@ -140,7 +145,7 @@ export function SaveToListModal({
           </View>
 
           <Pressable onPress={onClose} style={styles.doneBtn}>
-            <Text style={{ color: c.primary, fontSize: 15, fontWeight: '700' }}>Done</Text>
+            <Text style={{ color: c.primary, fontSize: 16, fontFamily: fonts.display600 }}>Done</Text>
           </Pressable>
         </Pressable>
       </Pressable>
@@ -149,27 +154,27 @@ export function SaveToListModal({
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', alignItems: 'center', justifyContent: 'center' },
-  card: { width: '85%', borderRadius: 18, padding: 18 },
-  title: { fontSize: 17, fontWeight: '700', marginBottom: 6 },
-  p: { fontSize: 14, lineHeight: 20 },
+  backdrop: { flex: 1, backgroundColor: 'rgba(23,23,15,0.36)', alignItems: 'center', justifyContent: 'center' },
+  card: { width: '85%', borderRadius: 24, padding: 20 },
+  title: { fontSize: 21, fontFamily: fonts.display800, marginBottom: 6 },
+  p: { fontSize: 14, fontFamily: fonts.body, lineHeight: 20 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 12,
   },
-  rowLabel: { fontSize: 15, fontWeight: '500' },
+  rowLabel: { fontSize: 15, fontFamily: fonts.bodyMedium },
   newRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8 },
   input: {
     flex: 1,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 16,
+    borderWidth: 1.5,
     paddingHorizontal: 14,
     paddingVertical: 10,
     fontSize: 15,
   },
-  primaryBtn: { marginTop: 14, paddingVertical: 13, borderRadius: 14, alignItems: 'center' },
-  primaryBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  primaryBtn: { marginTop: 14, paddingVertical: 13, borderRadius: 16, alignItems: 'center' },
+  primaryBtnText: { color: '#fff', fontFamily: fonts.display600, fontSize: 16 },
   doneBtn: { alignItems: 'center', marginTop: 14, paddingVertical: 4 },
 })

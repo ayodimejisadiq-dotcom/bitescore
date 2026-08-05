@@ -11,12 +11,12 @@
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0A7C4A"
+      "backgroundColor": "#046A38"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.bitescore.app",
-      "buildNumber": "15",
+      "buildNumber": "16",
       "config": { "usesNonExemptEncryption": false },
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Bitescore uses your location to show hygiene ratings for places to eat near you."
@@ -24,11 +24,11 @@
     },
     "android": {
       "package": "com.bitescore.app",
-      "versionCode": 15,
+      "versionCode": 16,
       "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0A7C4A"
+        "backgroundColor": "#046A38"
       }
     },
     "web": {

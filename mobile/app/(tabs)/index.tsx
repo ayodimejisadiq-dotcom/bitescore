@@ -22,6 +22,8 @@ import { FilterChips } from '@/components/FilterChips'
 import { useFilters } from '@/hooks/useFilters'
 import { isNumericRating, BUSINESS_TYPE_LABEL } from '@/lib/fsa'
 import { fetchPins, type Bounds } from '@/lib/data'
+import { isSupabaseConfigured } from '@/lib/supabase'
+import { errorMessage } from '@/lib/errors'
 import type { BrowseFilters, RestaurantPin } from '@/lib/types'
 
 // Central London as a sensible default until we have the user's location.
@@ -92,6 +94,8 @@ export default function MapScreen() {
   const [pins, setPins] = useState<RestaurantPin[]>([])
   const [selected, setSelected] = useState<RestaurantPin | null>(null)
   const [loading, setLoading] = useState(false)
+  const [pinError, setPinError] = useState<string | null>(null)
+  const [emptyHere, setEmptyHere] = useState(false)
   const [locating, setLocating] = useState(false)
   const [placeQuery, setPlaceQuery] = useState('')
   const [searchingPlace, setSearchingPlace] = useState(false)
@@ -100,9 +104,17 @@ export default function MapScreen() {
   const load = useCallback(async (region: Region, f: BrowseFilters) => {
     setLoading(true)
     try {
-      setPins(await fetchPins(regionToBounds(region), f))
-    } catch {
-      // Network/db errors leave the last pins in place; a toast comes later.
+      const next = await fetchPins(regionToBounds(region), f)
+      setPins(next)
+      setPinError(null)
+      // An empty viewport is not an error — FSA coverage is patchy outside
+      // ingested authorities — but say so, rather than showing a bare map
+      // that's indistinguishable from a failed query.
+      setEmptyHere(next.length === 0)
+    } catch (e) {
+      // Previously swallowed, which made a misconfigured build look identical
+      // to an area with no venues. Surface it.
+      setPinError(errorMessage(e))
     } finally {
       setLoading(false)
     }
@@ -255,6 +267,26 @@ export default function MapScreen() {
           <View style={[styles.loading, { backgroundColor: c.card }]}>
             <ActivityIndicator size="small" color={c.primary} />
           </View>
+        ) : !isSupabaseConfigured ? (
+          <View style={[styles.statusBanner, { backgroundColor: c.text }]}>
+            <Text style={styles.statusTitle}>Not connected</Text>
+            <Text style={[styles.statusBody, { color: c.onDarkMuted }]}>
+              This build shipped without its Supabase keys, so no ratings can load. Rebuild with
+              a .env file present.
+            </Text>
+          </View>
+        ) : pinError ? (
+          <View style={[styles.statusBanner, { backgroundColor: c.text }]}>
+            <Text style={styles.statusTitle}>Couldn't load ratings</Text>
+            <Text style={[styles.statusBody, { color: c.onDarkMuted }]}>{pinError}</Text>
+          </View>
+        ) : emptyHere ? (
+          <View style={[styles.statusBanner, { backgroundColor: c.card }]}>
+            <Text style={[styles.statusTitle, { color: c.text }]}>Nothing rated here yet</Text>
+            <Text style={[styles.statusBody, { color: c.mutedOnCard }]}>
+              Try zooming out, or search a town or postcode above.
+            </Text>
+          </View>
         ) : null}
       </SafeAreaView>
 
@@ -348,6 +380,16 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '45deg' }],
   },
   loading: { alignSelf: 'center', marginTop: 8, padding: 8, borderRadius: 10 },
+  statusBanner: {
+    marginHorizontal: 14,
+    marginTop: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    boxShadow: '0 6px 18px rgba(23,23,15,0.12)',
+  },
+  statusTitle: { color: '#fff', fontSize: 15, fontFamily: fonts.display600 },
+  statusBody: { fontSize: 12.5, fontFamily: fonts.body, lineHeight: 18, marginTop: 3 },
   locateBtn: {
     position: 'absolute',
     right: 14,

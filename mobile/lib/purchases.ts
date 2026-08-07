@@ -56,11 +56,23 @@ function isEntitledFrom(info: CustomerInfo): boolean {
   return typeof info.entitlements.active[ENTITLEMENT_ID] !== 'undefined'
 }
 
+// True only when configure() actually ran with a key. Screens use this to
+// explain an unusable purchase flow rather than silently misbehaving.
+export function isPurchasesConfigured(): boolean {
+  return configured
+}
+
 export async function getIsEntitled(): Promise<boolean> {
-  // Fail-open if RevenueCat isn't configured (e.g. keys missing locally) —
-  // a real build always has them, so this only affects incomplete dev setups,
-  // never production.
-  if (!configured) return true
+  if (!configured) {
+    // Only fail open in development, where a missing key is a normal
+    // incomplete setup. A release build reaching this point is misconfigured,
+    // and the old unconditional `return true` granted full access on the
+    // strength of an assumption ("a real build always has them") that did not
+    // hold: users landed inside the app with no entitlement, and — while the
+    // database was also gating rows — saw an empty map instead of a paywall.
+    // Failing closed sends them to PaywallGate, which says what is wrong.
+    return __DEV__
+  }
   try {
     const info = await Purchases.getCustomerInfo()
     return isEntitledFrom(info)

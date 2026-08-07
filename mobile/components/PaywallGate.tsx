@@ -13,7 +13,12 @@ import { Ionicons } from '@expo/vector-icons'
 import { PACKAGE_TYPE, PRODUCT_CATEGORY, type PurchasesPackage } from 'react-native-purchases'
 import { useTheme } from '@/theme/useTheme'
 import { fonts } from '@/theme/type'
-import { getOfferings, purchasePackage, restorePurchases } from '@/lib/purchases'
+import {
+  getOfferings,
+  purchasePackage,
+  restorePurchases,
+  isPurchasesConfigured,
+} from '@/lib/purchases'
 import { PRIVACY_POLICY_URL, TERMS_OF_USE_URL } from '@/lib/legal'
 import { errorMessage } from '@/lib/errors'
 import { EdgeButton, tileEdge } from './ui'
@@ -95,6 +100,15 @@ export function PaywallGate({ onUnlocked }: { onUnlocked: () => void }) {
   const load = useCallback(async () => {
     setLoadError(null)
     setPackages(null)
+    if (!isPurchasesConfigured()) {
+      // Distinct from a failed fetch: the build shipped without a RevenueCat
+      // key, so there is nothing to retry into. Say so plainly rather than
+      // implying a network problem.
+      setLoadError(
+        'Purchases aren’t available in this build — it was made without its store keys. Please reinstall from the App Store or TestFlight.',
+      )
+      return
+    }
     try {
       const offering = await getOfferings()
       const pkgs = [...(offering?.availablePackages ?? [])].sort(

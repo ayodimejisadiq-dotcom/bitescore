@@ -7,6 +7,7 @@ import { EdgeButton } from './ui'
 import { useSession } from '@/hooks/useSession'
 import { ensureSession } from '@/lib/auth'
 import { fetchMyLists, createList, addToList, removeFromList, listIdsContaining } from '@/lib/data'
+import { registerForPushAfterSave } from '@/lib/push'
 import type { ListWithItems } from '@/lib/types'
 
 export function SaveToListModal({
@@ -48,8 +49,14 @@ export function SaveToListModal({
     wasChecked ? next.delete(listId) : next.add(listId)
     setChecked(next) // optimistic
     try {
-      if (wasChecked) await removeFromList(listId, restaurantId)
-      else await addToList(listId, restaurantId)
+      if (wasChecked) {
+        await removeFromList(listId, restaurantId)
+      } else {
+        await addToList(listId, restaurantId)
+        // Saving a place is what score-change alerts are for, so this is
+        // where we ask for permission. Not awaited: the save is already done.
+        void registerForPushAfterSave()
+      }
     } catch {
       setChecked(checked) // revert on failure
     }
@@ -61,6 +68,7 @@ export function SaveToListModal({
     try {
       const id = await createList(newName)
       await addToList(id, restaurantId)
+      void registerForPushAfterSave()
       setNewName('')
       const myLists = await fetchMyLists()
       setLists(myLists)

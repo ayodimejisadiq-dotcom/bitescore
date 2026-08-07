@@ -10,6 +10,16 @@ export interface RestaurantPin {
   lat: number
 }
 
+// One populated cell of the viewport grid, from restaurant_clusters(). Counts
+// are computed across the whole viewport server-side, so a cluster's number is
+// the true total for that area rather than a count of whatever was fetched.
+export interface RestaurantCluster {
+  lng: number
+  lat: number
+  n: number
+  best_rating: string | null
+}
+
 export interface RestaurantNear {
   id: string
   name: string

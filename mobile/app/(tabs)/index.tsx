@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import {
   View,
   Text,
@@ -17,14 +17,15 @@ import { useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/theme/useTheme'
 import { fonts } from '@/theme/type'
-import { colorForRating, edgeForRating } from '@/theme/colors'
+import { colorForRating, edgeForRating, NEUTRAL_RATING } from '@/theme/colors'
+import { tileEdge } from '@/components/ui'
 import { FilterChips } from '@/components/FilterChips'
 import { useFilters } from '@/hooks/useFilters'
 import { isNumericRating, BUSINESS_TYPE_LABEL } from '@/lib/fsa'
-import { fetchPins, type Bounds } from '@/lib/data'
+import { fetchPins, fetchClusters, type Bounds } from '@/lib/data'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { errorMessage } from '@/lib/errors'
-import type { BrowseFilters, RestaurantPin } from '@/lib/types'
+import type { BrowseFilters, RestaurantCluster, RestaurantPin } from '@/lib/types'
 
 // Central London as a sensible default until we have the user's location.
 const DEFAULT_REGION: Region = {
@@ -52,13 +53,19 @@ function regionForQuery(query: string, lat: number, lng: number): Region {
   return { latitude: lat, longitude: lng, latitudeDelta: delta, longitudeDelta: delta }
 }
 
+// Above this span, individual pins are both unreadable and far too much native
+// work — a viewport this size covers tens of thousands of venues. We switch to
+// server-computed cluster bubbles instead. Chosen to sit above the 0.2 delta a
+// town-name search lands on, so that still shows real pins.
+const MAX_PIN_DELTA = 0.6
+
 // Score pin: rounded tile with a rotated-square pointer tail; 5s carry the
 // gold ring so the best places pop in a cluster.
-function ScorePin({ pin, selected }: { pin: RestaurantPin; selected: boolean }) {
+function ScorePin({ pin }: { pin: RestaurantPin }) {
   const fill = colorForRating(pin.rating_value)
   const numeric = isNumericRating(pin.rating_value)
   const isFive = pin.rating_value === '5'
-  const size = selected ? 40 : isFive ? 38 : 34
+  const size = isFive ? 38 : 34
   return (
     <View style={styles.pinWrap}>
       <View
@@ -82,6 +89,85 @@ function ScorePin({ pin, selected }: { pin: RestaurantPin; selected: boolean }) 
   )
 }
 
+// Memoised so that selecting a pin — or any other state change on this screen —
+// doesn't reconcile every marker on the map. Only the id and the tracking flag
+// can change what a marker renders.
+const ScoreMarker = memo(
+  function ScoreMarker({
+    pin,
+    tracking,
+    onSelect,
+  }: {
+    pin: RestaurantPin
+    tracking: boolean
+    onSelect: (pin: RestaurantPin) => void
+  }) {
+    return (
+      <Marker
+        coordinate={{ latitude: pin.lat, longitude: pin.lng }}
+        onPress={(e) => {
+          e.stopPropagation()
+          onSelect(pin)
+        }}
+        anchor={{ x: 0.5, y: 1 }}
+        // The important one. react-native-maps defaults this to true, which
+        // re-rasterises every custom marker view continuously, for every
+        // marker, forever. With a screenful of pins that is enough native work
+        // to run the app out of memory while panning. We only need it true
+        // briefly, until each marker has drawn once.
+        tracksViewChanges={tracking}
+      >
+        <ScorePin pin={pin} />
+      </Marker>
+    )
+  },
+  (a, b) => a.pin.id === b.pin.id && a.tracking === b.tracking,
+)
+
+// A cluster bubble sized by how many venues it covers, coloured by the best
+// rating in it. Tapping zooms into that cell.
+const ClusterMarker = memo(
+  function ClusterMarker({
+    cluster,
+    tracking,
+    onZoom,
+  }: {
+    cluster: RestaurantCluster
+    tracking: boolean
+    onZoom: (cluster: RestaurantCluster) => void
+  }) {
+    const size = cluster.n >= 1000 ? 60 : cluster.n >= 250 ? 52 : cluster.n >= 50 ? 46 : 40
+    const fill = cluster.best_rating ? colorForRating(cluster.best_rating) : NEUTRAL_RATING
+    const edge = cluster.best_rating ? edgeForRating(cluster.best_rating) : '#9A947F'
+    const label = cluster.n >= 1000 ? `${Math.round(cluster.n / 100) / 10}k` : String(cluster.n)
+    return (
+      <Marker
+        coordinate={{ latitude: cluster.lat, longitude: cluster.lng }}
+        onPress={(e) => {
+          e.stopPropagation()
+          onZoom(cluster)
+        }}
+        tracksViewChanges={tracking}
+      >
+        <View
+          style={[
+            styles.cluster,
+            { backgroundColor: fill, width: size, height: size, borderRadius: size / 2 },
+            tileEdge(edge, 3),
+          ]}
+        >
+          <Text style={[styles.clusterText, { fontSize: size * 0.32 }]}>{label}</Text>
+        </View>
+      </Marker>
+    )
+  },
+  (a, b) =>
+    a.cluster.lat === b.cluster.lat &&
+    a.cluster.lng === b.cluster.lng &&
+    a.cluster.n === b.cluster.n &&
+    a.tracking === b.tracking,
+)
+
 export default function MapScreen() {
   const c = useTheme()
   const router = useRouter()
@@ -96,15 +182,38 @@ export default function MapScreen() {
   const [loading, setLoading] = useState(false)
   const [pinError, setPinError] = useState<string | null>(null)
   const [emptyHere, setEmptyHere] = useState(false)
+  const [clusters, setClusters] = useState<RestaurantCluster[]>([])
+  // Markers need to draw once before we can stop tracking view changes; see
+  // ScoreMarker. Re-armed whenever the pin set changes.
+  const [tracking, setTracking] = useState(true)
+  const latestRequest = useRef(0)
   const [locating, setLocating] = useState(false)
   const [placeQuery, setPlaceQuery] = useState('')
   const [searchingPlace, setSearchingPlace] = useState(false)
   const [placeError, setPlaceError] = useState<string | null>(null)
 
   const load = useCallback(async (region: Region, f: BrowseFilters) => {
+    // Panning fast fires several of these, and they can return out of order.
+    // Without a guard the map thrashes: a stale response replaces a newer one,
+    // every marker is torn down and rebuilt, and the work compounds with each
+    // pan. Only the newest request is allowed to write state.
+    const requestId = ++latestRequest.current
+
+    const clustered = region.latitudeDelta > MAX_PIN_DELTA
     setLoading(true)
     try {
+      if (clustered) {
+        const cells = await fetchClusters(regionToBounds(region), f)
+        if (requestId !== latestRequest.current) return
+        setPins([])
+        setClusters(cells)
+        setPinError(null)
+        setEmptyHere(cells.length === 0)
+        return
+      }
       const next = await fetchPins(regionToBounds(region), f)
+      if (requestId !== latestRequest.current) return
+      setClusters([])
       setPins(next)
       setPinError(null)
       // An empty viewport is not an error — FSA coverage is patchy outside
@@ -112,11 +221,12 @@ export default function MapScreen() {
       // that's indistinguishable from a failed query.
       setEmptyHere(next.length === 0)
     } catch (e) {
+      if (requestId !== latestRequest.current) return
       // Previously swallowed, which made a misconfigured build look identical
       // to an area with no venues. Surface it.
       setPinError(errorMessage(e))
     } finally {
-      setLoading(false)
+      if (requestId === latestRequest.current) setLoading(false)
     }
   }, [])
 
@@ -198,6 +308,30 @@ export default function MapScreen() {
     }
   }
 
+  // Give markers a moment to rasterise after the set changes, then stop
+  // tracking view changes so they stop re-rendering natively on every frame.
+  useEffect(() => {
+    if (pins.length === 0 && clusters.length === 0) return
+    setTracking(true)
+    const t = setTimeout(() => setTracking(false), 600)
+    return () => clearTimeout(t)
+  }, [pins, clusters])
+
+  const onSelectPin = useCallback((pin: RestaurantPin) => setSelected(pin), [])
+
+  // Tapping a cluster dives into that cell rather than making the user pinch
+  // their way down. Four-fold zoom keeps the tapped area comfortably in frame.
+  const onZoomToCluster = useCallback((cluster: RestaurantCluster) => {
+    const region: Region = {
+      latitude: cluster.lat,
+      longitude: cluster.lng,
+      latitudeDelta: Math.max(regionRef.current.latitudeDelta / 4, 0.02),
+      longitudeDelta: Math.max(regionRef.current.longitudeDelta / 4, 0.02),
+    }
+    regionRef.current = region
+    mapRef.current?.animateToRegion(region, 400)
+  }, [])
+
   const onRegionChangeComplete = (region: Region) => {
     regionRef.current = region
     if (debounce.current) clearTimeout(debounce.current)
@@ -224,17 +358,15 @@ export default function MapScreen() {
         onPress={() => setSelected(null)}
       >
         {pins.map((p) => (
-          <Marker
-            key={p.id}
-            coordinate={{ latitude: p.lat, longitude: p.lng }}
-            onPress={(e) => {
-              e.stopPropagation()
-              setSelected(p)
-            }}
-            anchor={{ x: 0.5, y: 1 }}
-          >
-            <ScorePin pin={p} selected={selected?.id === p.id} />
-          </Marker>
+          <ScoreMarker key={p.id} pin={p} tracking={tracking} onSelect={onSelectPin} />
+        ))}
+        {clusters.map((cl) => (
+          <ClusterMarker
+            key={`${cl.lng.toFixed(4)},${cl.lat.toFixed(4)}`}
+            cluster={cl}
+            tracking={tracking}
+            onZoom={onZoomToCluster}
+          />
         ))}
       </MapView>
 
@@ -372,6 +504,13 @@ const styles = StyleSheet.create({
     boxShadow: '0 3px 8px rgba(4,45,26,0.35)',
   },
   pinText: { color: '#fff', fontFamily: fonts.display800 },
+  cluster: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2.5,
+    borderColor: 'rgba(255,253,247,0.9)',
+  },
+  clusterText: { color: '#fff', fontFamily: fonts.display800 },
   pinTail: {
     width: 9,
     height: 9,

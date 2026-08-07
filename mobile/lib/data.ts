@@ -6,6 +6,7 @@ import {
   type ListWithItems,
   type PlaceLookupResult,
   type Restaurant,
+  type RestaurantCluster,
   type RestaurantNear,
   type RestaurantPin,
   type Review,
@@ -27,10 +28,13 @@ function toRatingValues(filters: BrowseFilters): string[] | null {
   return filters.ratings.map((r) => (r === 'awaiting' ? 'AwaitingInspection' : String(r)))
 }
 
-// Map viewport pins.
+// Map viewport pins. maxRows is deliberately low by default: every pin becomes
+// a custom native view on the map, and a few hundred is where rendering starts
+// to cost more than it conveys.
 export async function fetchPins(
   bounds: Bounds,
   filters: BrowseFilters,
+  maxRows = 150,
 ): Promise<RestaurantPin[]> {
   const { data, error } = await supabase.rpc('restaurants_in_bounds', {
     min_lng: bounds.minLng,
@@ -38,10 +42,32 @@ export async function fetchPins(
     max_lng: bounds.maxLng,
     max_lat: bounds.maxLat,
     types: filters.types,
+    max_rows: maxRows,
     rating_values: toRatingValues(filters),
   })
   if (error) throw error
   return (data ?? []) as RestaurantPin[]
+}
+
+// Grid-aggregated counts for zoomed-out views, where one marker per venue is
+// both unreadable and too much native work to render.
+export async function fetchClusters(
+  bounds: Bounds,
+  filters: BrowseFilters,
+  cells = 10,
+): Promise<RestaurantCluster[]> {
+  const { data, error } = await supabase.rpc('restaurant_clusters', {
+    min_lng: bounds.minLng,
+    min_lat: bounds.minLat,
+    max_lng: bounds.maxLng,
+    max_lat: bounds.maxLat,
+    cells,
+    types: filters.types,
+    rating_values: toRatingValues(filters),
+  })
+  if (error) throw error
+  // n is a bigint server-side, which PostgREST may serialise as a string.
+  return ((data ?? []) as RestaurantCluster[]).map((c) => ({ ...c, n: Number(c.n) }))
 }
 
 // "Near me" list, sorted by distance.

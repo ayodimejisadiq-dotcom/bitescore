@@ -1,11 +1,14 @@
 import { ScrollView, Pressable, Text, StyleSheet } from 'react-native'
 import { useTheme } from '@/theme/useTheme'
+import { fonts } from '@/theme/type'
 import { BUSINESS_TYPE_LABEL, DINING_BUSINESS_TYPES } from '@/lib/fsa'
+import { tileEdge } from './ui'
 import { RatingDropdown } from './RatingDropdown'
 import type { BrowseFilters } from '@/lib/types'
 
-// Horizontal filter row for the map and search screens. Toggles minimum rating
-// and venue type; changes flow up via onChange.
+// Horizontal filter row for the map and search screens. The rating chip is
+// always the filled green anchor; category chips invert to green when
+// selected, matching it. Changes flow up via onChange.
 export function FilterChips({
   filters,
   onChange,
@@ -61,10 +64,12 @@ function Chip({
       onPress={onPress}
       style={[
         styles.chip,
-        { backgroundColor: active ? c.primary : c.card, borderColor: active ? c.primary : c.border },
+        active
+          ? [{ backgroundColor: c.primary }, tileEdge(c.primaryDark)]
+          : { backgroundColor: c.card, borderWidth: 1.5, borderColor: c.controlBorder },
       ]}
     >
-      <Text style={[styles.chipText, { color: active ? '#fff' : c.text }]}>{label}</Text>
+      <Text style={[styles.chipText, { color: active ? '#fff' : c.chipText }]}>{label}</Text>
     </Pressable>
   )
 }
@@ -72,6 +77,12 @@ function Chip({
 const styles = StyleSheet.create({
   scroll: { flexGrow: 0 },
   row: { gap: 8, paddingHorizontal: 14, paddingVertical: 4, alignItems: 'center' },
-  chip: { paddingHorizontal: 13, paddingVertical: 8, borderRadius: 999, borderWidth: 1 },
-  chipText: { fontSize: 13, fontWeight: '600' },
+  chip: {
+    height: 38,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chipText: { fontSize: 14, fontFamily: fonts.display600 },
 })

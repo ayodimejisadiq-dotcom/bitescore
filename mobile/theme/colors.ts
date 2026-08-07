@@ -1,59 +1,80 @@
-// Bitescore palette — clean, Apple-esque. Light/dark aware values live in
-// useTheme(); these are the brand + semantic constants.
+// Bitescore design system — "hygiene score foodmap" redesign. Warm cream
+// surfaces, one saturated colour family (the FSA score scale), physical
+// tile shadows. Tokens follow the design handoff spec.
 
 export const brand = {
-  // Fresh green, evokes hygiene/health.
-  primary: '#0A7C4A',
-  primaryDark: '#065C36',
-  primaryTint: '#E6F4EC',
+  primary: '#046A38',
+  primaryDark: '#02522B',
+  primaryTint: '#E4EEDC',
 }
 
-// Official FSA-style rating colours (green = good, red = poor). Used for the
-// score badge and map pins so ratings read instantly.
-export const ratingColor: Record<string, string> = {
-  '5': '#0E8A43',
-  '4': '#5BB318',
-  '3': '#F5A800',
-  '2': '#F27900',
-  '1': '#E4572E',
-  '0': '#C1121F',
+// FSA score scale — the only saturated colours in the app. `fill` is the
+// badge/pin colour, `edge` the dark bottom-edge shadow that makes badges
+// read as physical tiles.
+export const scoreFill: Record<string, string> = {
+  '5': '#046A38',
+  '4': '#5EA632',
+  '3': '#F2A31C',
+  '2': '#EF7B22',
+  '1': '#E24B29',
+  '0': '#C0362C',
 }
 
-// Non-numeric ratings render neutral.
-export const NEUTRAL_RATING = '#8E8E93'
+export const scoreEdge: Record<string, string> = {
+  '5': '#02522B',
+  '4': '#4A8626',
+  '3': '#D18C0C',
+  '2': '#CF6412',
+  '1': '#C13A1C',
+  '0': '#9E2A22',
+}
+
+// Non-numeric ratings (Exempt, AwaitingInspection, …) render neutral.
+export const NEUTRAL_RATING = '#B4AE9A'
 
 export function colorForRating(rating: string): string {
-  return ratingColor[rating] ?? NEUTRAL_RATING
+  return scoreFill[rating] ?? NEUTRAL_RATING
 }
 
-// Grey-to-green scale for the minimum-rating filter control (distinct from the
-// FSA red→green badge scale above — this one just shows "how strict" the
-// filter is, muted at 0 rising to full brand green at 5).
-const FILTER_GREY = { r: 0xb8, g: 0xbd, b: 0xba }
-const FILTER_GREEN = { r: 0x0a, g: 0x7c, b: 0x4a } // brand.primary
-
-export function greyToGreen(step: number, max = 5): string {
-  const t = Math.max(0, Math.min(1, step / max))
-  const r = Math.round(FILTER_GREY.r + (FILTER_GREEN.r - FILTER_GREY.r) * t)
-  const g = Math.round(FILTER_GREY.g + (FILTER_GREEN.g - FILTER_GREY.g) * t)
-  const b = Math.round(FILTER_GREY.b + (FILTER_GREEN.b - FILTER_GREY.b) * t)
-  return `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`
+export function edgeForRating(rating: string): string {
+  return scoreEdge[rating] ?? '#9A947F'
 }
 
-export const light = {
-  bg: '#FFFFFF',
-  card: '#F2F2F7',
-  text: '#1C1C1E',
-  subtext: '#6E6E73',
-  border: '#E5E5EA',
+// Kept for compatibility with older call sites.
+export const ratingColor = scoreFill
+
+export const palette = {
+  // Surfaces
+  bg: '#F7F2E7', // canvas
+  card: '#FFFDF7',
+  border: '#E7DFCC', // card border
+  rowBorder: '#EBE3D1', // list-row card border, slightly lighter
+  controlBorder: '#E4DBC8', // search bar & filter chips
+  dashedBorder: '#D9CFB5',
+  dashedBorderDark: '#C9C0A9',
+  subtleFill: '#F0EDE0', // secondary button, today-row pill, progress track
+  lockedFill: '#EDE7D8',
+
+  // Text
+  text: '#17170F', // ink — also used as the dark-card fill
+  inkSecondary: '#5B584B',
+  subtext: '#7A7768', // muted, on canvas
+  mutedOnCard: '#8B8775',
+  placeholder: '#9D9884',
+  disabled: '#B4AE9A',
+  onDarkMuted: '#A9A594',
+  legal: '#A29D8A',
+  chipText: '#3F3D33',
+
+  // Accents
+  accent: '#E2552B', // ember — streak, "changed" flag, add-review CTA
+  accentDark: '#C0431F',
+  openNow: '#3F7C1F',
+  goldRing: '#F1C34A',
+  userDot: '#2C7BE5',
+  star: '#F2A31C',
+
   ...brand,
 }
 
-export const dark = {
-  bg: '#000000',
-  card: '#1C1C1E',
-  text: '#FFFFFF',
-  subtext: '#98989F',
-  border: '#2C2C2E',
-  ...brand,
-}
+export type Palette = typeof palette

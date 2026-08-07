@@ -3,6 +3,12 @@ import { View, ActivityIndicator, LogBox } from 'react-native'
 import { Stack, useRouter } from 'expo-router'
 import * as Notifications from 'expo-notifications'
 import { StatusBar } from 'expo-status-bar'
+import { useFonts } from 'expo-font'
+import {
+  BricolageGrotesque_600SemiBold,
+  BricolageGrotesque_800ExtraBold,
+} from '@expo-google-fonts/bricolage-grotesque'
+import { DMSans_400Regular, DMSans_500Medium, DMSans_700Bold } from '@expo-google-fonts/dm-sans'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { ensureSession } from '@/lib/auth'
 import { useSession } from '@/hooks/useSession'
@@ -25,6 +31,13 @@ export default function RootLayout() {
   const { session, loading: sessionLoading } = useSession()
   const [entitled, setEntitled] = useState<boolean | null>(null)
   const router = useRouter()
+  const [fontsLoaded] = useFonts({
+    BricolageGrotesque_600SemiBold,
+    BricolageGrotesque_800ExtraBold,
+    DMSans_400Regular,
+    DMSans_500Medium,
+    DMSans_700Bold,
+  })
 
   // Deep-links a tapped score-change notification straight to that
   // restaurant's detail page — covers both the app already running
@@ -64,7 +77,7 @@ export default function RootLayout() {
     })()
   }, [session?.user.id])
 
-  const stillChecking = sessionLoading || (session && entitled === null)
+  const stillChecking = !fontsLoaded || sessionLoading || (session && entitled === null)
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

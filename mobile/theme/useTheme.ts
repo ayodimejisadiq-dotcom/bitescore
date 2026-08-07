@@ -1,9 +1,9 @@
-import { useColorScheme } from 'react-native'
-import { dark, light } from './colors'
+import { palette, type Palette } from './colors'
 
-export type Palette = typeof light
+export type { Palette }
 
+// The redesign defines a single warm light appearance — the cream canvas and
+// score colours are the brand, so dark mode intentionally renders the same.
 export function useTheme(): Palette {
-  const scheme = useColorScheme()
-  return scheme === 'dark' ? dark : light
+  return palette
 }

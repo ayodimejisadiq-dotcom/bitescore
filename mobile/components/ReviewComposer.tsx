@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { View, Text, TextInput, Pressable, Modal, ActivityIndicator, StyleSheet, Alert } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/theme/useTheme'
+import { fonts } from '@/theme/type'
+import { EdgeButton } from './ui'
 import { submitReview, deleteReview } from '@/lib/data'
 import type { Review } from '@/lib/types'
 
@@ -79,7 +81,7 @@ export function ReviewComposer({
             value={body}
             onChangeText={setBody}
             placeholder="What was it like?"
-            placeholderTextColor={c.subtext}
+            placeholderTextColor={c.disabled}
             multiline
             maxLength={2000}
             style={[styles.input, { backgroundColor: c.bg, color: c.text, borderColor: c.border }]}
@@ -88,27 +90,31 @@ export function ReviewComposer({
             <Ionicons
               name={anonymous ? 'checkbox' : 'square-outline'}
               size={20}
-              color={anonymous ? c.primary : c.subtext}
+              color={anonymous ? c.primary : c.mutedOnCard}
             />
             <Text style={[styles.anonLabel, { color: c.text }]}>Post anonymously</Text>
           </Pressable>
 
-          <Pressable
-            style={[styles.primaryBtn, { backgroundColor: c.primary, opacity: body.trim() ? 1 : 0.5 }]}
+          <EdgeButton
+            color={c.primary}
+            edgeColor={c.primaryDark}
+            edge={4}
+            radius={16}
             onPress={onSubmit}
             disabled={saving || !body.trim()}
+            style={styles.primaryBtn}
           >
             {saving ? (
               <ActivityIndicator color="#fff" />
             ) : (
               <Text style={styles.primaryBtnText}>{existingReview ? 'Save changes' : 'Post review'}</Text>
             )}
-          </Pressable>
+          </EdgeButton>
 
           {existingReview ? (
             <Pressable onPress={onDelete} disabled={deleting} style={styles.deleteBtn}>
               {deleting ? (
-                <ActivityIndicator color={c.subtext} />
+                <ActivityIndicator color={c.mutedOnCard} />
               ) : (
                 <Text style={styles.deleteBtnText}>Delete review</Text>
               )}
@@ -116,7 +122,7 @@ export function ReviewComposer({
           ) : null}
 
           <Pressable onPress={onClose} style={styles.cancelBtn}>
-            <Text style={[styles.cancelBtnText, { color: c.subtext }]}>Cancel</Text>
+            <Text style={[styles.cancelBtnText, { color: c.mutedOnCard }]}>Cancel</Text>
           </Pressable>
         </Pressable>
       </Pressable>
@@ -125,12 +131,12 @@ export function ReviewComposer({
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', alignItems: 'center', justifyContent: 'center' },
-  card: { width: '88%', borderRadius: 18, padding: 18 },
-  title: { fontSize: 17, fontWeight: '700', marginBottom: 12 },
+  backdrop: { flex: 1, backgroundColor: 'rgba(23,23,15,0.36)', alignItems: 'center', justifyContent: 'center' },
+  card: { width: '88%', borderRadius: 24, padding: 20 },
+  title: { fontSize: 21, fontFamily: fonts.display800, marginBottom: 12 },
   input: {
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 16,
+    borderWidth: 1.5,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 15,
@@ -138,11 +144,11 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   anonRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
-  anonLabel: { fontSize: 14, fontWeight: '500' },
-  primaryBtn: { marginTop: 16, paddingVertical: 13, borderRadius: 14, alignItems: 'center' },
-  primaryBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  anonLabel: { fontSize: 14, fontFamily: fonts.bodyMedium },
+  primaryBtn: { marginTop: 16, paddingVertical: 13, borderRadius: 16, alignItems: 'center' },
+  primaryBtnText: { color: '#fff', fontFamily: fonts.display600, fontSize: 16 },
   deleteBtn: { alignItems: 'center', marginTop: 12, paddingVertical: 4 },
-  deleteBtnText: { color: '#D64545', fontSize: 14, fontWeight: '600' },
+  deleteBtnText: { color: '#E24B29', fontSize: 14, fontFamily: fonts.display600 },
   cancelBtn: { alignItems: 'center', marginTop: 10, paddingVertical: 4 },
-  cancelBtnText: { fontSize: 15, fontWeight: '600' },
+  cancelBtnText: { fontSize: 15, fontFamily: fonts.display600 },
 })

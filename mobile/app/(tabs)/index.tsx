@@ -16,11 +16,14 @@ import * as Location from 'expo-location'
 import { useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/theme/useTheme'
+import { fonts } from '@/theme/type'
+import { colorForRating, edgeForRating } from '@/theme/colors'
 import { FilterChips } from '@/components/FilterChips'
 import { useFilters } from '@/hooks/useFilters'
-import { colorForRating } from '@/theme/colors'
-import { isNumericRating } from '@/lib/fsa'
+import { isNumericRating, BUSINESS_TYPE_LABEL } from '@/lib/fsa'
 import { fetchPins, type Bounds } from '@/lib/data'
+import { isSupabaseConfigured } from '@/lib/supabase'
+import { errorMessage } from '@/lib/errors'
 import type { BrowseFilters, RestaurantPin } from '@/lib/types'
 
 // Central London as a sensible default until we have the user's location.
@@ -49,6 +52,36 @@ function regionForQuery(query: string, lat: number, lng: number): Region {
   return { latitude: lat, longitude: lng, latitudeDelta: delta, longitudeDelta: delta }
 }
 
+// Score pin: rounded tile with a rotated-square pointer tail; 5s carry the
+// gold ring so the best places pop in a cluster.
+function ScorePin({ pin, selected }: { pin: RestaurantPin; selected: boolean }) {
+  const fill = colorForRating(pin.rating_value)
+  const numeric = isNumericRating(pin.rating_value)
+  const isFive = pin.rating_value === '5'
+  const size = selected ? 40 : isFive ? 38 : 34
+  return (
+    <View style={styles.pinWrap}>
+      <View
+        style={[
+          styles.pinTile,
+          {
+            backgroundColor: fill,
+            width: size,
+            height: size,
+            borderRadius: size * 0.35,
+          },
+          isFive ? { borderWidth: 2.5, borderColor: '#F1C34A' } : null,
+        ]}
+      >
+        <Text style={[styles.pinText, { fontSize: size * 0.5 }]}>
+          {numeric ? pin.rating_value : '–'}
+        </Text>
+      </View>
+      <View style={[styles.pinTail, { backgroundColor: isFive ? '#F1C34A' : fill }]} />
+    </View>
+  )
+}
+
 export default function MapScreen() {
   const c = useTheme()
   const router = useRouter()
@@ -59,25 +92,33 @@ export default function MapScreen() {
 
   const [filters, setFilters, filtersLoaded] = useFilters()
   const [pins, setPins] = useState<RestaurantPin[]>([])
+  const [selected, setSelected] = useState<RestaurantPin | null>(null)
   const [loading, setLoading] = useState(false)
+  const [pinError, setPinError] = useState<string | null>(null)
+  const [emptyHere, setEmptyHere] = useState(false)
   const [locating, setLocating] = useState(false)
   const [placeQuery, setPlaceQuery] = useState('')
   const [searchingPlace, setSearchingPlace] = useState(false)
   const [placeError, setPlaceError] = useState<string | null>(null)
 
-  const load = useCallback(
-    async (region: Region, f: BrowseFilters) => {
-      setLoading(true)
-      try {
-        setPins(await fetchPins(regionToBounds(region), f))
-      } catch {
-        // Network/db errors leave the last pins in place; a toast comes later.
-      } finally {
-        setLoading(false)
-      }
-    },
-    [],
-  )
+  const load = useCallback(async (region: Region, f: BrowseFilters) => {
+    setLoading(true)
+    try {
+      const next = await fetchPins(regionToBounds(region), f)
+      setPins(next)
+      setPinError(null)
+      // An empty viewport is not an error — FSA coverage is patchy outside
+      // ingested authorities — but say so, rather than showing a bare map
+      // that's indistinguishable from a failed query.
+      setEmptyHere(next.length === 0)
+    } catch (e) {
+      // Previously swallowed, which made a misconfigured build look identical
+      // to an area with no venues. Surface it.
+      setPinError(errorMessage(e))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
   // Shared by first launch and the "my location" button, so both recentre and
   // reload pins the same way.
@@ -168,6 +209,10 @@ export default function MapScreen() {
     load(regionRef.current, next)
   }
 
+  const selectedCategory = selected
+    ? (BUSINESS_TYPE_LABEL[selected.business_type] ?? selected.business_type)
+    : null
+
   return (
     <View style={styles.root}>
       <MapView
@@ -176,25 +221,26 @@ export default function MapScreen() {
         initialRegion={DEFAULT_REGION}
         showsUserLocation
         onRegionChangeComplete={onRegionChangeComplete}
+        onPress={() => setSelected(null)}
       >
         {pins.map((p) => (
           <Marker
             key={p.id}
             coordinate={{ latitude: p.lat, longitude: p.lng }}
-            onPress={() => router.push(`/restaurant/${p.id}`)}
+            onPress={(e) => {
+              e.stopPropagation()
+              setSelected(p)
+            }}
+            anchor={{ x: 0.5, y: 1 }}
           >
-            <View style={[styles.pin, { backgroundColor: colorForRating(p.rating_value) }]}>
-              <Text style={styles.pinText}>
-                {isNumericRating(p.rating_value) ? p.rating_value : '–'}
-              </Text>
-            </View>
+            <ScorePin pin={p} selected={selected?.id === p.id} />
           </Marker>
         ))}
       </MapView>
 
       <SafeAreaView edges={['top']} style={styles.overlay} pointerEvents="box-none">
-        <View style={[styles.search, { backgroundColor: c.card, borderColor: c.border }]}>
-          <Ionicons name="search" size={16} color={c.subtext} />
+        <View style={[styles.search, { backgroundColor: c.card, borderColor: c.controlBorder }]}>
+          <Ionicons name="search" size={19} color={c.primary} />
           <TextInput
             value={placeQuery}
             onChangeText={(t) => {
@@ -203,7 +249,7 @@ export default function MapScreen() {
             }}
             onSubmitEditing={onSearchPlace}
             placeholder="Go to a town or postcode"
-            placeholderTextColor={c.subtext}
+            placeholderTextColor={c.placeholder}
             autoCapitalize="none"
             autoCorrect={false}
             returnKeyType="search"
@@ -212,7 +258,7 @@ export default function MapScreen() {
           {searchingPlace ? <ActivityIndicator size="small" color={c.primary} /> : null}
         </View>
         {placeError ? (
-          <View style={[styles.errorBanner, { backgroundColor: c.card }]}>
+          <View style={[styles.errorBanner, { backgroundColor: c.card, borderColor: c.controlBorder }]}>
             <Text style={[styles.errorText, { color: c.subtext }]}>{placeError}</Text>
           </View>
         ) : null}
@@ -221,6 +267,26 @@ export default function MapScreen() {
           <View style={[styles.loading, { backgroundColor: c.card }]}>
             <ActivityIndicator size="small" color={c.primary} />
           </View>
+        ) : !isSupabaseConfigured ? (
+          <View style={[styles.statusBanner, { backgroundColor: c.text }]}>
+            <Text style={styles.statusTitle}>Not connected</Text>
+            <Text style={[styles.statusBody, { color: c.onDarkMuted }]}>
+              This build shipped without its Supabase keys, so no ratings can load. Rebuild with
+              a .env file present.
+            </Text>
+          </View>
+        ) : pinError ? (
+          <View style={[styles.statusBanner, { backgroundColor: c.text }]}>
+            <Text style={styles.statusTitle}>Couldn't load ratings</Text>
+            <Text style={[styles.statusBody, { color: c.onDarkMuted }]}>{pinError}</Text>
+          </View>
+        ) : emptyHere ? (
+          <View style={[styles.statusBanner, { backgroundColor: c.card }]}>
+            <Text style={[styles.statusTitle, { color: c.text }]}>Nothing rated here yet</Text>
+            <Text style={[styles.statusBody, { color: c.mutedOnCard }]}>
+              Try zooming out, or search a town or postcode above.
+            </Text>
+          </View>
         ) : null}
       </SafeAreaView>
 
@@ -228,7 +294,11 @@ export default function MapScreen() {
         onPress={() => recenterOnUser({ promptIfDenied: true })}
         style={[
           styles.locateBtn,
-          { backgroundColor: c.card, borderColor: c.border, bottom: insets.bottom + 20 },
+          {
+            backgroundColor: c.card,
+            borderColor: c.controlBorder,
+            bottom: insets.bottom + (selected ? 96 : 20),
+          },
         ]}
         hitSlop={8}
       >
@@ -238,6 +308,33 @@ export default function MapScreen() {
           <Ionicons name="locate" size={22} color={c.primary} />
         )}
       </Pressable>
+
+      {selected ? (
+        <Pressable
+          onPress={() => router.push(`/restaurant/${selected.id}`)}
+          style={[styles.preview, { backgroundColor: c.text, bottom: insets.bottom + 16 }]}
+        >
+          <View
+            style={[
+              styles.previewBadge,
+              { backgroundColor: colorForRating(selected.rating_value) },
+            ]}
+          >
+            <Text style={styles.previewBadgeText}>
+              {isNumericRating(selected.rating_value) ? selected.rating_value : '–'}
+            </Text>
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.previewName} numberOfLines={1}>
+              {selected.name}
+            </Text>
+            <Text style={[styles.previewMeta, { color: c.onDarkMuted }]} numberOfLines={1}>
+              {selectedCategory}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#EFE8D8" />
+        </Pressable>
+      ) : null}
     </View>
   )
 }
@@ -248,59 +345,82 @@ const styles = StyleSheet.create({
   search: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 9,
+    gap: 10,
     marginHorizontal: 14,
     marginTop: 6,
-    marginBottom: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
+    marginBottom: 11,
+    paddingHorizontal: 15,
+    height: 50,
+    borderRadius: 17,
+    borderWidth: 1.5,
+    boxShadow: '0 6px 18px rgba(23,23,15,0.1)',
   },
-  searchInput: { flex: 1, fontSize: 15, padding: 0 },
+  searchInput: { flex: 1, fontSize: 16, fontFamily: fonts.body, padding: 0 },
   errorBanner: {
     marginHorizontal: 14,
     marginBottom: 8,
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 12,
+    borderWidth: 1.5,
   },
-  errorText: { fontSize: 12.5, lineHeight: 18 },
-  pin: {
-    minWidth: 30,
-    height: 30,
-    borderRadius: 9,
-    paddingHorizontal: 6,
+  errorText: { fontSize: 12.5, fontFamily: fonts.body, lineHeight: 18 },
+  pinWrap: { alignItems: 'center' },
+  pinTile: {
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.9)',
+    boxShadow: '0 3px 8px rgba(4,45,26,0.35)',
   },
-  pinText: { color: '#fff', fontWeight: '800', fontSize: 14 },
-  loading: {
-    alignSelf: 'center',
+  pinText: { color: '#fff', fontFamily: fonts.display800 },
+  pinTail: {
+    width: 9,
+    height: 9,
+    borderRadius: 2,
+    marginTop: -6,
+    transform: [{ rotate: '45deg' }],
+  },
+  loading: { alignSelf: 'center', marginTop: 8, padding: 8, borderRadius: 10 },
+  statusBanner: {
+    marginHorizontal: 14,
     marginTop: 8,
-    padding: 8,
-    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    boxShadow: '0 6px 18px rgba(23,23,15,0.12)',
   },
+  statusTitle: { color: '#fff', fontSize: 15, fontFamily: fonts.display600 },
+  statusBody: { fontSize: 12.5, fontFamily: fonts.body, lineHeight: 18, marginTop: 3 },
   locateBtn: {
     position: 'absolute',
-    right: 16,
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    borderWidth: StyleSheet.hairlineWidth,
+    right: 14,
+    width: 44,
+    height: 44,
+    borderRadius: 15,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
+    boxShadow: '0 4px 12px rgba(23,23,15,0.1)',
   },
+  preview: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 19,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    boxShadow: '0 10px 26px rgba(23,23,15,0.28)',
+  },
+  previewBadge: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewBadgeText: { color: '#fff', fontFamily: fonts.display800, fontSize: 21 },
+  previewName: { color: '#fff', fontSize: 16.5, fontFamily: fonts.display600 },
+  previewMeta: { fontSize: 13, fontFamily: fonts.body, marginTop: 2 },
 })

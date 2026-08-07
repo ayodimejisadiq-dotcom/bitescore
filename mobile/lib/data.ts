@@ -27,10 +27,13 @@ function toRatingValues(filters: BrowseFilters): string[] | null {
   return filters.ratings.map((r) => (r === 'awaiting' ? 'AwaitingInspection' : String(r)))
 }
 
-// Map viewport pins.
+// Map viewport pins. maxRows is deliberately low by default: every pin becomes
+// a custom native view on the map, and a few hundred is where rendering starts
+// to cost more than it conveys.
 export async function fetchPins(
   bounds: Bounds,
   filters: BrowseFilters,
+  maxRows = 150,
 ): Promise<RestaurantPin[]> {
   const { data, error } = await supabase.rpc('restaurants_in_bounds', {
     min_lng: bounds.minLng,
@@ -38,6 +41,7 @@ export async function fetchPins(
     max_lng: bounds.maxLng,
     max_lat: bounds.maxLat,
     types: filters.types,
+    max_rows: maxRows,
     rating_values: toRatingValues(filters),
   })
   if (error) throw error

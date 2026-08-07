@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import {
   View,
   Text,
@@ -52,13 +52,19 @@ function regionForQuery(query: string, lat: number, lng: number): Region {
   return { latitude: lat, longitude: lng, latitudeDelta: delta, longitudeDelta: delta }
 }
 
+// Panning far out covers tens of thousands of venues; the query would return
+// an arbitrary slice of them and the map would be an unreadable wall of pins.
+// Above this span we skip pins entirely and ask the user to zoom in. Chosen to
+// sit above the 0.2 delta that a town-name search lands on, so that still works.
+const MAX_PIN_DELTA = 0.6
+
 // Score pin: rounded tile with a rotated-square pointer tail; 5s carry the
 // gold ring so the best places pop in a cluster.
-function ScorePin({ pin, selected }: { pin: RestaurantPin; selected: boolean }) {
+function ScorePin({ pin }: { pin: RestaurantPin }) {
   const fill = colorForRating(pin.rating_value)
   const numeric = isNumericRating(pin.rating_value)
   const isFive = pin.rating_value === '5'
-  const size = selected ? 40 : isFive ? 38 : 34
+  const size = isFive ? 38 : 34
   return (
     <View style={styles.pinWrap}>
       <View
@@ -82,6 +88,41 @@ function ScorePin({ pin, selected }: { pin: RestaurantPin; selected: boolean }) 
   )
 }
 
+// Memoised so that selecting a pin — or any other state change on this screen —
+// doesn't reconcile every marker on the map. Only the id and the tracking flag
+// can change what a marker renders.
+const ScoreMarker = memo(
+  function ScoreMarker({
+    pin,
+    tracking,
+    onSelect,
+  }: {
+    pin: RestaurantPin
+    tracking: boolean
+    onSelect: (pin: RestaurantPin) => void
+  }) {
+    return (
+      <Marker
+        coordinate={{ latitude: pin.lat, longitude: pin.lng }}
+        onPress={(e) => {
+          e.stopPropagation()
+          onSelect(pin)
+        }}
+        anchor={{ x: 0.5, y: 1 }}
+        // The important one. react-native-maps defaults this to true, which
+        // re-rasterises every custom marker view continuously, for every
+        // marker, forever. With a screenful of pins that is enough native work
+        // to run the app out of memory while panning. We only need it true
+        // briefly, until each marker has drawn once.
+        tracksViewChanges={tracking}
+      >
+        <ScorePin pin={pin} />
+      </Marker>
+    )
+  },
+  (a, b) => a.pin.id === b.pin.id && a.tracking === b.tracking,
+)
+
 export default function MapScreen() {
   const c = useTheme()
   const router = useRouter()
@@ -96,15 +137,36 @@ export default function MapScreen() {
   const [loading, setLoading] = useState(false)
   const [pinError, setPinError] = useState<string | null>(null)
   const [emptyHere, setEmptyHere] = useState(false)
+  const [zoomedOut, setZoomedOut] = useState(false)
+  // Markers need to draw once before we can stop tracking view changes; see
+  // ScoreMarker. Re-armed whenever the pin set changes.
+  const [tracking, setTracking] = useState(true)
+  const latestRequest = useRef(0)
   const [locating, setLocating] = useState(false)
   const [placeQuery, setPlaceQuery] = useState('')
   const [searchingPlace, setSearchingPlace] = useState(false)
   const [placeError, setPlaceError] = useState<string | null>(null)
 
   const load = useCallback(async (region: Region, f: BrowseFilters) => {
+    // Panning fast fires several of these, and they can return out of order.
+    // Without a guard the map thrashes: a stale response replaces a newer one,
+    // every marker is torn down and rebuilt, and the work compounds with each
+    // pan. Only the newest request is allowed to write state.
+    const requestId = ++latestRequest.current
+
+    if (region.latitudeDelta > MAX_PIN_DELTA) {
+      setPins([])
+      setPinError(null)
+      setEmptyHere(false)
+      setZoomedOut(true)
+      setLoading(false)
+      return
+    }
+    setZoomedOut(false)
     setLoading(true)
     try {
       const next = await fetchPins(regionToBounds(region), f)
+      if (requestId !== latestRequest.current) return
       setPins(next)
       setPinError(null)
       // An empty viewport is not an error — FSA coverage is patchy outside
@@ -112,11 +174,12 @@ export default function MapScreen() {
       // that's indistinguishable from a failed query.
       setEmptyHere(next.length === 0)
     } catch (e) {
+      if (requestId !== latestRequest.current) return
       // Previously swallowed, which made a misconfigured build look identical
       // to an area with no venues. Surface it.
       setPinError(errorMessage(e))
     } finally {
-      setLoading(false)
+      if (requestId === latestRequest.current) setLoading(false)
     }
   }, [])
 
@@ -198,6 +261,17 @@ export default function MapScreen() {
     }
   }
 
+  // Give markers a moment to rasterise after the set changes, then stop
+  // tracking view changes so they stop re-rendering natively on every frame.
+  useEffect(() => {
+    if (pins.length === 0) return
+    setTracking(true)
+    const t = setTimeout(() => setTracking(false), 600)
+    return () => clearTimeout(t)
+  }, [pins])
+
+  const onSelectPin = useCallback((pin: RestaurantPin) => setSelected(pin), [])
+
   const onRegionChangeComplete = (region: Region) => {
     regionRef.current = region
     if (debounce.current) clearTimeout(debounce.current)
@@ -224,17 +298,7 @@ export default function MapScreen() {
         onPress={() => setSelected(null)}
       >
         {pins.map((p) => (
-          <Marker
-            key={p.id}
-            coordinate={{ latitude: p.lat, longitude: p.lng }}
-            onPress={(e) => {
-              e.stopPropagation()
-              setSelected(p)
-            }}
-            anchor={{ x: 0.5, y: 1 }}
-          >
-            <ScorePin pin={p} selected={selected?.id === p.id} />
-          </Marker>
+          <ScoreMarker key={p.id} pin={p} tracking={tracking} onSelect={onSelectPin} />
         ))}
       </MapView>
 
@@ -279,6 +343,13 @@ export default function MapScreen() {
           <View style={[styles.statusBanner, { backgroundColor: c.text }]}>
             <Text style={styles.statusTitle}>Couldn't load ratings</Text>
             <Text style={[styles.statusBody, { color: c.onDarkMuted }]}>{pinError}</Text>
+          </View>
+        ) : zoomedOut ? (
+          <View style={[styles.statusBanner, { backgroundColor: c.card }]}>
+            <Text style={[styles.statusTitle, { color: c.text }]}>Zoom in to see ratings</Text>
+            <Text style={[styles.statusBody, { color: c.mutedOnCard }]}>
+              There are too many places to show at this distance.
+            </Text>
           </View>
         ) : emptyHere ? (
           <View style={[styles.statusBanner, { backgroundColor: c.card }]}>

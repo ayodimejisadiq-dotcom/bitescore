@@ -1,6 +1,16 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import Expo, { type ExpoPushMessage } from 'expo-server-sdk'
+import ExpoModule, { type ExpoPushMessage } from 'expo-server-sdk'
 import { admin } from '../../lib/supabase.js'
+
+// expo-server-sdk ships CommonJS while this server is ESM ("type": "module"),
+// so Node's interop hands the default import the whole module.exports object
+// — { Expo, default } — rather than the class. `new Expo()` therefore threw
+// "Expo is not a constructor" at module load, which meant this endpoint
+// returned 500 on every single invocation and no score-change notification was
+// ever sent. Unwrap to the real constructor. The types are correct as written;
+// only the runtime shape differs, hence the cast.
+const Expo = ((ExpoModule as unknown as { default?: typeof ExpoModule }).default ??
+  ExpoModule) as typeof ExpoModule
 
 // Sends push notifications for score_changes the ingestion job has logged
 // but not yet notified anyone about (see migration 0004's ingest_upsert and

@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { renderPage, CONTACT_EMAIL } from '../lib/page.js'
 
 // Serves the Bitescore privacy policy at https://bitescore.vercel.app/privacy
 // (rewritten from /privacy in vercel.json). App Review requires a functional
@@ -6,29 +7,12 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 // and in the App Store Connect Privacy Policy field — this page is that link.
 
 const LAST_UPDATED = '28 July 2026'
-const CONTACT_EMAIL = 'dimejisadiq@live.com'
 
-const HTML = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bitescore — Privacy Policy</title>
-<style>
-  :root { color-scheme: light dark; }
-  body { font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-         max-width: 720px; margin: 0 auto; padding: 32px 20px 80px; }
-  h1 { font-size: 28px; letter-spacing: -0.5px; }
-  h2 { font-size: 19px; margin-top: 32px; }
-  ul { padding-left: 22px; }
-  .meta { opacity: 0.6; font-size: 14px; }
-  a { color: #0A7C4A; }
-</style>
-</head>
-<body>
-<h1>Bitescore Privacy Policy</h1>
-<p class="meta">Last updated: ${LAST_UPDATED}</p>
-
+const HTML = renderPage({
+  title: 'Bitescore — Privacy Policy',
+  heading: 'Bitescore Privacy Policy',
+  subtitle: `Last updated: ${LAST_UPDATED}`,
+  body: `
 <p>Bitescore is a mobile app that shows official UK food hygiene ratings
 (published by the Food Standards Agency) for places to eat, with maps, search,
 saved lists, reviews, and score-change notifications. This policy explains what
@@ -96,9 +80,8 @@ collect data from them.</p>
 
 <h2>Contact</h2>
 <p><a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a></p>
-</body>
-</html>
-`
+`,
+})
 
 export default function handler(_req: VercelRequest, res: VercelResponse) {
   res.setHeader('Content-Type', 'text/html; charset=utf-8')

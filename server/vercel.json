@@ -4,7 +4,11 @@
     "api/cron/ingest.ts": { "maxDuration": 60 },
     "api/cron/notify.ts": { "maxDuration": 60 }
   },
-  "rewrites": [{ "source": "/privacy", "destination": "/api/privacy" }],
+  "rewrites": [
+    { "source": "/", "destination": "/api/home" },
+    { "source": "/privacy", "destination": "/api/privacy" },
+    { "source": "/support", "destination": "/api/support" }
+  ],
   "crons": [
     { "path": "/api/cron/ingest", "schedule": "0 3 * * *" },
     { "path": "/api/cron/notify", "schedule": "0 * * * *" }

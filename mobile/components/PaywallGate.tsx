@@ -18,6 +18,7 @@ import {
   purchasePackage,
   restorePurchases,
   isPurchasesConfigured,
+  retryIdentityAndEntitlement,
 } from '@/lib/purchases'
 import { PRIVACY_POLICY_URL, TERMS_OF_USE_URL } from '@/lib/legal'
 import { errorMessage } from '@/lib/errors'
@@ -89,7 +90,18 @@ function isAutoRenewing(pkg: PurchasesPackage): boolean {
   )
 }
 
-export function PaywallGate({ onUnlocked }: { onUnlocked: () => void }) {
+export function PaywallGate({
+  onUnlocked,
+  userId,
+  identityFailed = false,
+}: {
+  onUnlocked: () => void
+  // Present so the paywall can re-attempt the RevenueCat login itself.
+  userId?: string
+  // True when we could not confirm which customer we're acting as, so
+  // "not entitled" may be wrong. Someone who has genuinely paid can land here.
+  identityFailed?: boolean
+}) {
   const c = useTheme()
   const [packages, setPackages] = useState<PurchasesPackage[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -149,6 +161,13 @@ export function PaywallGate({ onUnlocked }: { onUnlocked: () => void }) {
     if (restoring) return
     setRestoring(true)
     try {
+      // If identity was never confirmed, re-establish it first — otherwise a
+      // restore succeeds against the wrong customer and still leaves the
+      // person locked out.
+      if (identityFailed && userId && (await retryIdentityAndEntitlement(userId))) {
+        onUnlocked()
+        return
+      }
       if (await restorePurchases()) {
         onUnlocked()
       } else {
@@ -264,6 +283,15 @@ export function PaywallGate({ onUnlocked }: { onUnlocked: () => void }) {
           </>
         )}
 
+        {identityFailed ? (
+          <View style={[styles.notice, { backgroundColor: c.subtleFill }]}>
+            <Text style={[styles.noticeText, { color: c.inkSecondary }]}>
+              We couldn't check your account just now, so this screen may be showing in error. If
+              you've already bought Bitescore, tap Restore Purchases.
+            </Text>
+          </View>
+        ) : null}
+
         <View style={styles.legalRow}>
           <Pressable onPress={onRestore} disabled={restoring} hitSlop={8}>
             {restoring ? (
@@ -315,6 +343,14 @@ const styles = StyleSheet.create({
   ctaText: { color: '#fff', fontSize: 17, fontFamily: fonts.display600 },
   fineprint: { fontSize: 11.5, fontFamily: fonts.body, lineHeight: 16, textAlign: 'center', marginTop: 12 },
   errorText: { fontSize: 14, fontFamily: fonts.body, lineHeight: 20, textAlign: 'center', marginTop: 8 },
+  notice: {
+    marginTop: 16,
+    alignSelf: 'stretch',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  noticeText: { fontSize: 12.5, lineHeight: 18, textAlign: 'center' },
   legalRow: {
     flexDirection: 'row',
     alignItems: 'center',

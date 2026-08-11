@@ -30,6 +30,7 @@ export default function RootLayout() {
   const c = useTheme()
   const { session, loading: sessionLoading } = useSession()
   const [entitled, setEntitled] = useState<boolean | null>(null)
+  const [identityFailed, setIdentityFailed] = useState(false)
   const router = useRouter()
   const [fontsLoaded] = useFonts({
     BricolageGrotesque_600SemiBold,
@@ -72,7 +73,13 @@ export default function RootLayout() {
   useEffect(() => {
     if (!session) return
     ;(async () => {
-      await loginPurchases(session.user.id)
+      // Identity has to be established before the entitlement answer means
+      // anything: RevenueCat persists the last app user id across launches, so
+      // without a confirmed login this reports on whichever customer the SDK
+      // was left on. Pass the result down so the paywall can distinguish
+      // "you haven't bought this" from "we couldn't check".
+      const identified = await loginPurchases(session.user.id)
+      setIdentityFailed(!identified)
       setEntitled(await getIsEntitled())
     })()
   }, [session?.user.id])
@@ -87,7 +94,11 @@ export default function RootLayout() {
           <ActivityIndicator color={c.primary} />
         </View>
       ) : entitled === false ? (
-        <PaywallGate onUnlocked={() => setEntitled(true)} />
+        <PaywallGate
+          userId={session?.user.id}
+          identityFailed={identityFailed}
+          onUnlocked={() => setEntitled(true)}
+        />
       ) : (
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="(tabs)" />

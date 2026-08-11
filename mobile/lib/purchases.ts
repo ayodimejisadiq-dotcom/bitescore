@@ -40,16 +40,46 @@ export function configurePurchases(): void {
   configured = true
 }
 
+// Whether the SDK is currently known to be operating as our Supabase user.
+// False means any entitlement answer is about some other customer and cannot
+// be trusted either way.
+let identityConfirmed = false
+
+export function isPurchasesIdentityConfirmed(): boolean {
+  return identityConfirmed
+}
+
 // Links RevenueCat's customer to our own Supabase user id, so the webhook
 // (server/api/revenuecat/webhook.ts) can update the right row in
 // public.entitlements without any separate mapping table.
-export async function loginPurchases(userId: string): Promise<void> {
-  if (!configured) return
-  try {
-    await Purchases.logIn(userId)
-  } catch (e) {
-    console.warn('[bitescore] RevenueCat login failed', e)
+//
+// This used to swallow its own failure. That is a bad trade for a call this
+// load-bearing: RevenueCat persists the last app user id across launches, so a
+// failed logIn leaves the SDK operating as a *previous* user while the app
+// carries on as the current one. Everything downstream then answers about the
+// wrong customer — a purchase can attach to a stale id, and someone who has
+// genuinely paid can be told they haven't, with nothing surfacing anywhere.
+//
+// So: retry transient failures, and confirm the SDK really switched rather
+// than trusting logIn resolving. Returns whether identity is established.
+export async function loginPurchases(userId: string): Promise<boolean> {
+  if (!configured) return false
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await Purchases.logIn(userId)
+      if ((await Purchases.getAppUserID()) === userId) {
+        identityConfirmed = true
+        return true
+      }
+      console.warn('[bitescore] RevenueCat logIn resolved but app user id did not change')
+    } catch (e) {
+      console.warn(`[bitescore] RevenueCat login failed (attempt ${attempt + 1})`, e)
+    }
+    // Launch-time network blips are the common case; back off and retry.
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 500 * 2 ** attempt))
   }
+  identityConfirmed = false
+  return false
 }
 
 function isEntitledFrom(info: CustomerInfo): boolean {
@@ -79,6 +109,14 @@ export async function getIsEntitled(): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+// Re-attempts identity, then re-reads entitlement. Used by the paywall's
+// retry, so someone locked out by a failed login at launch has a way back
+// without reinstalling.
+export async function retryIdentityAndEntitlement(userId: string): Promise<boolean> {
+  await loginPurchases(userId)
+  return getIsEntitled()
 }
 
 export async function getOfferings(): Promise<PurchasesOffering | null> {

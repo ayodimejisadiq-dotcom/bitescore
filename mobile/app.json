@@ -17,7 +17,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.bitescore.app",
       "buildNumber": "18",
-      "config": { "usesNonExemptEncryption": false },
+      "config": {
+        "usesNonExemptEncryption": false
+      },
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Bitescore uses your location to show hygiene ratings for places to eat near you."
       }
@@ -25,7 +27,16 @@
     "android": {
       "package": "com.bitescore.app",
       "versionCode": 18,
-      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"],
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#046A38"
@@ -40,6 +51,21 @@
       "expo-location",
       "expo-notifications"
     ],
-    "experiments": { "typedRoutes": false }
+    "experiments": {
+      "typedRoutes": false
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "44efaf3a-a3d6-48f0-adee-e0bfa2637a8a"
+      }
+    },
+    "owner": "dilagee",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/44efaf3a-a3d6-48f0-adee-e0bfa2637a8a"
+    }
   }
 }

@@ -14,6 +14,8 @@ import { ensureSession } from '@/lib/auth'
 import { useSession } from '@/hooks/useSession'
 import { configurePurchases, loginPurchases, getIsEntitled } from '@/lib/purchases'
 import { PaywallGate } from '@/components/PaywallGate'
+import { OnboardingFlow } from '@/components/OnboardingFlow'
+import { shouldShowOnboarding } from '@/lib/onboarding'
 import { restaurantIdFromNotificationResponse } from '@/lib/push'
 import { useTheme } from '@/theme/useTheme'
 
@@ -31,6 +33,8 @@ export default function RootLayout() {
   const { session, loading: sessionLoading } = useSession()
   const [entitled, setEntitled] = useState<boolean | null>(null)
   const [identityFailed, setIdentityFailed] = useState(false)
+  // null until we've decided; avoids the intro flashing over the map.
+  const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null)
   const router = useRouter()
   const [fontsLoaded] = useFonts({
     BricolageGrotesque_600SemiBold,
@@ -84,7 +88,18 @@ export default function RootLayout() {
     })()
   }, [session?.user.id])
 
-  const stillChecking = !fontsLoaded || sessionLoading || (session && entitled === null)
+  // Only asked once the paywall has been passed, so someone who never gets
+  // in is never walked through building a list they can't use.
+  useEffect(() => {
+    if (entitled !== true) return
+    shouldShowOnboarding().then(setNeedsOnboarding)
+  }, [entitled])
+
+  const stillChecking =
+    !fontsLoaded ||
+    sessionLoading ||
+    (session && entitled === null) ||
+    (entitled === true && needsOnboarding === null)
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -99,6 +114,8 @@ export default function RootLayout() {
           identityFailed={identityFailed}
           onUnlocked={() => setEntitled(true)}
         />
+      ) : needsOnboarding ? (
+        <OnboardingFlow onDone={() => setNeedsOnboarding(false)} />
       ) : (
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="(tabs)" />

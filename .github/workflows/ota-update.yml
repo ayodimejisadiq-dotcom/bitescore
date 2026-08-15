@@ -1,0 +1,66 @@
+# Publishes the OTA update from CI rather than from a developer's laptop.
+#
+# `eas update` bundles the working directory, so publishing by hand ships
+# whatever happens to be on disk at the time — including uncommitted edits.
+# That is how production ended up running code that existed on no branch.
+# Here the tree is always a clean checkout of main, so what users receive is
+# exactly what was reviewed and merged.
+name: OTA update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # Native config changes need a new binary, not an update, so they
+      # deliberately don't trigger this.
+      - 'mobile/app/**'
+      - 'mobile/components/**'
+      - 'mobile/hooks/**'
+      - 'mobile/lib/**'
+      - 'mobile/theme/**'
+      - 'mobile/assets/**'
+      - 'mobile/package-lock.json'
+  workflow_dispatch:
+
+concurrency:
+  # A newer commit on main supersedes an in-flight publish; two updates
+  # racing to the same channel would leave the later one live arbitrarily.
+  group: ota-production
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - run: npm ci
+
+      # A bundle that fails to build is far cheaper to catch here than on a
+      # user's phone, where a broken update means a hard relaunch loop.
+      - name: Typecheck
+        run: npm run typecheck
+
+      # The commit message goes through an env var and is trimmed to its
+      # first line: interpolating it straight into the shell breaks on the
+      # quotes and newlines real commit messages contain.
+      - name: Publish to the production channel
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message || github.sha }}
+        run: |
+          SUBJECT="$(printf '%s' "$COMMIT_MESSAGE" | head -n 1)"
+          eas update --branch production --message "$SUBJECT" --non-interactive

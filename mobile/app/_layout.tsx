@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { View, ActivityIndicator, LogBox } from 'react-native'
 import { Stack, useRouter } from 'expo-router'
 import * as Notifications from 'expo-notifications'
+import * as Updates from 'expo-updates'
 import { StatusBar } from 'expo-status-bar'
 import { useFonts } from 'expo-font'
 import {
@@ -54,6 +55,18 @@ export default function RootLayout() {
     })
     return () => sub.remove()
   }, [router])
+
+  // Check for an OTA update on every launch and reload immediately if one is
+  // available, so users don't need the two-launch cycle.
+  useEffect(() => {
+    if (__DEV__) return
+    Updates.checkForUpdateAsync()
+      .then(({ isAvailable }) => {
+        if (!isAvailable) return
+        return Updates.fetchUpdateAsync().then(() => Updates.reloadAsync())
+      })
+      .catch(() => {})
+  }, [])
 
   // Silently establishes an anonymous session on first launch, so lists,
   // saves, and reviews work immediately with no sign-in screen. Adding an

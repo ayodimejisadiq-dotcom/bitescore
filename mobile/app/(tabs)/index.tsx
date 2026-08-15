@@ -21,6 +21,8 @@ import { colorForRating, edgeForRating, NEUTRAL_RATING } from '@/theme/colors'
 import { tileEdge } from '@/components/ui'
 import { FilterChips } from '@/components/FilterChips'
 import { useFilters } from '@/hooks/useFilters'
+import { useUserHeading } from '@/hooks/useUserHeading'
+import { UserHeadingCone } from '@/components/UserHeadingCone'
 import { isNumericRating, BUSINESS_TYPE_LABEL } from '@/lib/fsa'
 import { fetchPins, fetchClusters, searchRestaurants, type Bounds } from '@/lib/data'
 import { isSupabaseConfigured } from '@/lib/supabase'
@@ -50,6 +52,10 @@ function regionToBounds(r: Region): Bounds {
 // server-computed cluster bubbles instead. Chosen to sit above the 0.2 delta a
 // town-name search lands on, so that still shows real pins.
 const MAX_PIN_DELTA = 0.6
+
+// The heading cone is fixed-size in screen points, so past a neighbourhood-
+// scale viewport it stops meaning anything on the ground. Hide it above this.
+const MAX_CONE_DELTA = 0.05
 
 // Score pin: rounded tile with a rotated-square pointer tail; 5s carry the
 // gold ring so the best places pop in a cluster.
@@ -180,11 +186,22 @@ export default function MapScreen() {
   const [tracking, setTracking] = useState(true)
   const latestRequest = useRef(0)
   const [locating, setLocating] = useState(false)
+<<<<<<< HEAD
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<RestaurantNear[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+=======
+  const [placeQuery, setPlaceQuery] = useState('')
+  const [searchingPlace, setSearchingPlace] = useState(false)
+  const [placeError, setPlaceError] = useState<string | null>(null)
+  const [locationGranted, setLocationGranted] = useState(false)
+  // The heading cone is a street-level cue — at town scale it would be a
+  // wedge covering half a city, so only draw it once we're zoomed in.
+  const [closeZoom, setCloseZoom] = useState(true)
+  const pose = useUserHeading(locationGranted)
+>>>>>>> origin/main
 
   const load = useCallback(async (region: Region, f: BrowseFilters) => {
     // Panning fast fires several of these, and they can return out of order.
@@ -234,6 +251,7 @@ export default function MapScreen() {
         if (status !== 'granted') {
           ;({ status } = await Location.requestForegroundPermissionsAsync())
         }
+        setLocationGranted(status === 'granted')
         if (status !== 'granted') {
           if (opts.promptIfDenied) {
             Alert.alert(
@@ -324,6 +342,7 @@ export default function MapScreen() {
 
   const onRegionChangeComplete = (region: Region) => {
     regionRef.current = region
+    setCloseZoom(region.latitudeDelta <= MAX_CONE_DELTA)
     if (debounce.current) clearTimeout(debounce.current)
     debounce.current = setTimeout(() => load(region, filters), 400)
   }
@@ -347,6 +366,7 @@ export default function MapScreen() {
         onRegionChangeComplete={onRegionChangeComplete}
         onPress={() => setSelected(null)}
       >
+        {pose && closeZoom ? <UserHeadingCone pose={pose} /> : null}
         {pins.map((p) => (
           <ScoreMarker key={p.id} pin={p} tracking={tracking} onSelect={onSelectPin} />
         ))}

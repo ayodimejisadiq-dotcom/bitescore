@@ -186,22 +186,16 @@ export default function MapScreen() {
   const [tracking, setTracking] = useState(true)
   const latestRequest = useRef(0)
   const [locating, setLocating] = useState(false)
-<<<<<<< HEAD
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<RestaurantNear[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
-=======
-  const [placeQuery, setPlaceQuery] = useState('')
-  const [searchingPlace, setSearchingPlace] = useState(false)
-  const [placeError, setPlaceError] = useState<string | null>(null)
   const [locationGranted, setLocationGranted] = useState(false)
   // The heading cone is a street-level cue — at town scale it would be a
   // wedge covering half a city, so only draw it once we're zoomed in.
   const [closeZoom, setCloseZoom] = useState(true)
   const pose = useUserHeading(locationGranted)
->>>>>>> origin/main
 
   const load = useCallback(async (region: Region, f: BrowseFilters) => {
     // Panning fast fires several of these, and they can return out of order.

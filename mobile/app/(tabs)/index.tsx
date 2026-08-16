@@ -195,6 +195,7 @@ export default function MapScreen() {
   // The heading cone is a street-level cue — at town scale it would be a
   // wedge covering half a city, so only draw it once we're zoomed in.
   const [closeZoom, setCloseZoom] = useState(true)
+  const [mapBearing, setMapBearing] = useState(0)
   const pose = useUserHeading(locationGranted)
 
   const load = useCallback(async (region: Region, f: BrowseFilters) => {
@@ -337,6 +338,10 @@ export default function MapScreen() {
   const onRegionChangeComplete = (region: Region) => {
     regionRef.current = region
     setCloseZoom(region.latitudeDelta <= MAX_CONE_DELTA)
+    // Region carries no bearing, and the cone is rotated in screen space, so
+    // ask the camera directly. Only two-finger rotation changes this, which
+    // always ends in a region-change, so this is the moment it can go stale.
+    mapRef.current?.getCamera().then((cam) => setMapBearing(cam.heading ?? 0)).catch(() => {})
     if (debounce.current) clearTimeout(debounce.current)
     debounce.current = setTimeout(() => load(region, filters), 400)
   }
@@ -360,7 +365,7 @@ export default function MapScreen() {
         onRegionChangeComplete={onRegionChangeComplete}
         onPress={() => setSelected(null)}
       >
-        {pose && closeZoom ? <UserHeadingCone pose={pose} /> : null}
+        {pose && closeZoom ? <UserHeadingCone pose={pose} mapBearing={mapBearing} /> : null}
         {pins.map((p) => (
           <ScoreMarker key={p.id} pin={p} tracking={tracking} onSelect={onSelectPin} />
         ))}

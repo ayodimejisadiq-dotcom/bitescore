@@ -18,9 +18,12 @@ const CONE_LEN = 60
 const OUTER_HALF_WIDTH = 38
 const INNER_HALF_WIDTH = 22
 
-function Cone() {
+function Cone({ rotation }: { rotation: number }) {
   return (
-    <View style={styles.wrap} pointerEvents="none">
+    <View
+      style={[styles.wrap, { transform: [{ rotate: `${rotation}deg` }] }]}
+      pointerEvents="none"
+    >
       <View style={[styles.tri, styles.outer]} />
       <View style={[styles.tri, styles.inner]} />
     </View>
@@ -30,25 +33,32 @@ function Cone() {
 // Heading updates land many times a second; re-render only when the cone
 // would visibly move.
 export const UserHeadingCone = memo(
-  function UserHeadingCone({ pose }: { pose: UserPose }) {
+  function UserHeadingCone({ pose, mapBearing }: { pose: UserPose; mapBearing: number }) {
     return (
       <Marker
         coordinate={{ latitude: pose.latitude, longitude: pose.longitude }}
         anchor={{ x: 0.5, y: 0.5 }}
-        // Flat so the wedge stays pinned to the ground when the map rotates,
-        // and rotated to the compass bearing. Not tappable and at the bottom
-        // of the stack, so it never steals a tap from a score pin.
-        flat
-        rotation={pose.heading}
         zIndex={0}
         tappable={false}
+        // The wedge is rotated by the child view's own transform rather than
+        // the Marker's `rotation` prop: on iOS that prop is applied to the
+        // annotation view when it is created and does not reliably follow
+        // later updates for a marker with custom children, which left the cone
+        // frozen at whatever bearing it first rendered with. A style transform
+        // is plain React Native and re-renders like anything else.
+        //
+        // That makes the rotation screen-relative, so the map's own bearing is
+        // subtracted to keep the wedge pointing at true ground north — the job
+        // `flat` used to do.
+        tracksViewChanges
       >
-        <Cone />
+        <Cone rotation={pose.heading - mapBearing} />
       </Marker>
     )
   },
   (a, b) =>
     Math.round(a.pose.heading) === Math.round(b.pose.heading) &&
+    Math.round(a.mapBearing) === Math.round(b.mapBearing) &&
     a.pose.latitude === b.pose.latitude &&
     a.pose.longitude === b.pose.longitude,
 )

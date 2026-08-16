@@ -10,6 +10,18 @@ export type UserPose = {
   accuracy: number | null
 }
 
+// Raw compass output jitters by several degrees while the phone is held
+// still, which reads as a twitching wedge rather than a heading. Ease towards
+// each new reading instead of snapping to it, going the short way around so a
+// swing across north (359° → 1°) doesn't spin the cone the long way.
+const SMOOTHING = 0.25
+
+function smooth(prev: number | null, next: number): number {
+  if (prev == null) return next
+  let delta = ((next - prev + 540) % 360) - 180
+  return (prev + delta * SMOOTHING + 360) % 360
+}
+
 // The system blue dot tells you where you are but not which way you're
 // pointing, which is exactly what you need when standing outside a venue
 // deciding whether it's the place on your left or your right. We watch
@@ -67,7 +79,7 @@ export function useUserHeading(enabled: boolean): UserPose | null {
           // close enough for "which way am I facing" in the meantime.
           const next = h.trueHeading >= 0 ? h.trueHeading : h.magHeading
           if (next < 0) return
-          heading.current = next
+          heading.current = smooth(heading.current, next)
           emit()
         })
         if (cancelled) {

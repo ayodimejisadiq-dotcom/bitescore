@@ -401,9 +401,21 @@ export default function MapScreen() {
     mapRef.current?.animateToRegion(region, 400)
   }, [])
 
-  const onRegionChangeComplete = (region: Region) => {
+  const onRegionChangeComplete = (region: Region, details?: { isGesture?: boolean }) => {
     const prev = regionRef.current
     regionRef.current = region
+
+    // Leaving a follow mode is about looking somewhere *else*, not about
+    // looking closer. Pinching to zoom keeps you at the centre — which is
+    // exactly what you do in a busy high street, zooming in before working out
+    // which way to turn — so only a gesture that carries the centre away from
+    // you hands control back.
+    if (details?.isGesture && locateMode !== 'free' && originRef.current) {
+      const strayed =
+        Math.abs(region.latitude - originRef.current.lat) > region.latitudeDelta / 3 ||
+        Math.abs(region.longitude - originRef.current.lng) > region.longitudeDelta / 3
+      if (strayed) setLocateMode('free')
+    }
 
     // Rotating the map reports a region change on every frame of the turn, and
     // the viewport it covers has not meaningfully moved — without this,
@@ -437,9 +449,6 @@ export default function MapScreen() {
         showsUserLocation
         onRegionChangeComplete={onRegionChangeComplete}
         onPress={() => setSelected(null)}
-        // Dragging the map is a statement that you want to look somewhere
-        // else, so it hands control back rather than fighting the camera.
-        onPanDrag={() => setLocateMode((m) => (m === 'free' ? m : 'free'))}
       >
         {pins.map((p) => (
           <ScoreMarker key={p.id} pin={p} tracking={tracking} onSelect={onSelectPin} />

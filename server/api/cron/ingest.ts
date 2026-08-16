@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { waitUntil } from '@vercel/functions'
 import { admin } from '../../lib/supabase.js'
 import {
   fetchAuthorities,
@@ -62,28 +63,58 @@ async function ingestAuthority(authorityId: number): Promise<number> {
   return seen
 }
 
-// Fire-and-forget continuation so one daily cron can drive a full pass on plans
-// with short function limits. Guarded by the cursor so it can't loop forever.
+// Continuation so one cron tick can drive a full pass rather than a single
+// 45-second slice. Handed to waitUntil: a bare `void fetch(...)` is frozen the
+// instant the response returns, so most continuations were never dispatched at
+// all and each daily cron advanced the cursor by one slice. That put a full
+// pass at roughly three weeks, which is how a rating could change on 8 July and
+// still not be live in mid-August. Guarded by the cursor so it can't loop
+// forever, and by the lease below so it can't overlap the next cron tick.
 function triggerContinuation(req: VercelRequest): void {
   const host = req.headers['x-forwarded-host'] ?? req.headers.host
   const proto = req.headers['x-forwarded-proto'] ?? 'https'
   const secret = process.env.CRON_SECRET ?? ''
-  const url = `${proto}://${host}/api/cron/ingest?secret=${encodeURIComponent(secret)}`
-  // Don't await — we want to return promptly and let the next invocation run.
-  void fetch(url, { method: 'POST' }).catch(() => {})
+  // `continuation` waives the lease: this run has already finished its slice
+  // and just refreshed last_run_at, so the lease it would otherwise contend
+  // with is its own. A chain is serial by construction, and still authorized.
+  const url = `${proto}://${host}/api/cron/ingest?secret=${encodeURIComponent(secret)}&continuation=1`
+  // Not awaited — the next invocation runs independently — but waitUntil keeps
+  // this one alive long enough for the request to actually leave.
+  waitUntil(fetch(url, { method: 'POST' }).catch(() => {}))
 }
+
+// A run is expected to finish within maxDuration (60s). If ingest_state was
+// touched more recently than this, another invocation is mid-slice and this one
+// should stand down: the cron now fires every 15 minutes, so ticks would
+// otherwise overlap the continuation chain and re-fetch authorities a second
+// invocation is already working through. Upserts are idempotent, so an overlap
+// is wasted work rather than corruption — but wasted work is what starves the
+// cursor.
+const LEASE_MS = 90_000
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!authorized(req)) return res.status(401).json({ error: 'unauthorized' })
 
   const started = Date.now()
 
-  const { data: state, error: stateErr } = await admin
+  // Claim the lease and read state in one write: the update only matches when
+  // the last run is old enough to have finished, so a losing invocation gets
+  // zero rows back and exits instead of duplicating a slice.
+  const leaseCutoff = new Date(Date.now() - LEASE_MS).toISOString()
+  const isContinuation = req.query.continuation === '1'
+  const claim = admin
     .from('ingest_state')
-    .select('*')
+    .update({ last_run_at: new Date().toISOString() })
     .eq('id', 1)
-    .single()
-  if (stateErr || !state) return res.status(500).json({ error: 'ingest_state missing' })
+  const { data: claimed, error: stateErr } = await (isContinuation
+    ? claim.select()
+    : claim.or(`last_run_at.is.null,last_run_at.lt.${leaseCutoff}`).select())
+
+  if (stateErr) return res.status(500).json({ error: stateErr.message })
+  if (!claimed || claimed.length === 0) {
+    return res.status(200).json({ ok: true, skipped: 'another run holds the lease' })
+  }
+  const state = claimed[0]
 
   const authorities = await fetchAuthorities()
   let cursor: number = state.cursor ?? 0

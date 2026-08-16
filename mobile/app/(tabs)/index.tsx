@@ -219,6 +219,10 @@ export default function MapScreen() {
   // the compass is not free, and most of the time the map is being browsed.
   const pose = useUserHeading(locationGranted && locateMode !== 'free')
   const lastCamera = useRef({ at: 0, heading: 0 })
+  // Where search measures from. Seeded by the initial locate and refreshed by
+  // the live pose when a follow mode is running, so results stay sorted around
+  // where you are now rather than where you opened the app.
+  const originRef = useRef<{ lng: number; lat: number } | null>(null)
 
   const load = useCallback(async (region: Region, f: BrowseFilters) => {
     // Panning fast fires several of these, and they can return out of order.
@@ -287,6 +291,7 @@ export default function MapScreen() {
           return
         }
         const pos = await Location.getCurrentPositionAsync({})
+        originRef.current = { lng: pos.coords.longitude, lat: pos.coords.latitude }
         const region: Region = {
           latitude: pos.coords.latitude,
           longitude: pos.coords.longitude,
@@ -312,7 +317,9 @@ export default function MapScreen() {
   // went blank between position updates. The camera has no such problem, and a
   // course-up map answers "which way am I facing" without a cone at all.
   useEffect(() => {
-    if (!pose || locateMode === 'free') return
+    if (!pose) return
+    originRef.current = { lng: pose.longitude, lat: pose.latitude }
+    if (locateMode === 'free') return
 
     const now = Date.now()
     const heading = locateMode === 'heading' ? pose.heading : 0
@@ -360,7 +367,7 @@ export default function MapScreen() {
     searchDebounce.current = setTimeout(async () => {
       setSearchLoading(true)
       try {
-        setSearchResults(await searchRestaurants(text, filters))
+        setSearchResults(await searchRestaurants(text, filters, originRef.current))
       } catch (e) {
         setSearchError(errorMessage(e))
         setSearchResults([])

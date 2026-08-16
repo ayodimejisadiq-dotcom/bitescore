@@ -11,12 +11,12 @@
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#046A38"
+      "backgroundColor": "#FFDE59"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.bitescore.app",
-      "buildNumber": "20",
+      "buildNumber": "21",
       "config": {
         "usesNonExemptEncryption": false
       },
@@ -26,7 +26,7 @@
     },
     "android": {
       "package": "com.bitescore.app",
-      "versionCode": 20,
+      "versionCode": 21,
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
@@ -35,7 +35,7 @@
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#046A38"
+        "backgroundColor": "#FFDE59"
       }
     },
     "web": {

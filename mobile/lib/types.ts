@@ -29,7 +29,9 @@ export interface RestaurantNear {
   rating_value: string
   rating_is_numeric: boolean
   rating_date: string | null
-  distance_m: number
+  // Null when the query had no origin to measure from — location denied, or a
+  // venue the FSA never geocoded. The row simply omits the distance then.
+  distance_m: number | null
 }
 
 export interface Restaurant {

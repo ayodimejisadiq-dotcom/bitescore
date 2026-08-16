@@ -3,6 +3,7 @@ import { View, ActivityIndicator, LogBox } from 'react-native'
 import { Stack, useRouter } from 'expo-router'
 import * as Notifications from 'expo-notifications'
 import * as Updates from 'expo-updates'
+import * as SplashScreen from 'expo-splash-screen'
 import { StatusBar } from 'expo-status-bar'
 import { useFonts } from 'expo-font'
 import {
@@ -17,6 +18,16 @@ import { configurePurchases, loginPurchases, getIsEntitled } from '@/lib/purchas
 import { PaywallGate } from '@/components/PaywallGate'
 import { restaurantIdFromNotificationResponse } from '@/lib/push'
 import { useTheme } from '@/theme/useTheme'
+
+// Hold the native splash — the Bitescore logo — rather than letting it vanish
+// the instant the first frame is ready. Claimed at module scope so it happens
+// before the first render, and always released below.
+SplashScreen.preventAutoHideAsync().catch(() => {})
+
+// Long enough to register as branding, short enough not to feel like the app
+// is slow to start. Startup work usually finishes well inside this, so in
+// practice this is the splash duration rather than a floor under a longer wait.
+const MIN_SPLASH_MS = 2000
 
 if (__DEV__) {
   // Supabase's own background token-refresh timer (runs every ~30s for the
@@ -97,7 +108,21 @@ export default function RootLayout() {
     })()
   }, [session?.user.id])
 
+  const [splashHeld, setSplashHeld] = useState(true)
+  useEffect(() => {
+    const t = setTimeout(() => setSplashHeld(false), MIN_SPLASH_MS)
+    return () => clearTimeout(t)
+  }, [])
+
   const stillChecking = !fontsLoaded || sessionLoading || (session && entitled === null)
+
+  // Drop the splash only once the minimum has elapsed *and* there is something
+  // real behind it — otherwise it would hand over to the spinner, which is a
+  // worse first impression than holding the logo a moment longer.
+  useEffect(() => {
+    if (splashHeld || stillChecking) return
+    SplashScreen.hideAsync().catch(() => {})
+  }, [splashHeld, stillChecking])
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

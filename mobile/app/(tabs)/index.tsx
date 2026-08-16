@@ -22,7 +22,6 @@ import { tileEdge } from '@/components/ui'
 import { FilterChips } from '@/components/FilterChips'
 import { useFilters } from '@/hooks/useFilters'
 import { useUserHeading } from '@/hooks/useUserHeading'
-import { UserHeadingCone } from '@/components/UserHeadingCone'
 import { isNumericRating, BUSINESS_TYPE_LABEL } from '@/lib/fsa'
 import { fetchPins, fetchClusters, searchRestaurants, type Bounds } from '@/lib/data'
 import { isSupabaseConfigured } from '@/lib/supabase'
@@ -53,9 +52,29 @@ function regionToBounds(r: Region): Bounds {
 // town-name search lands on, so that still shows real pins.
 const MAX_PIN_DELTA = 0.6
 
-// The heading cone is fixed-size in screen points, so past a neighbourhood-
-// scale viewport it stops meaning anything on the ground. Hide it above this.
-const MAX_CONE_DELTA = 0.05
+// The locate button cycles through these, the way Apple and Google Maps do.
+// `follow` keeps you centred with the map north-up; `heading` additionally
+// turns the map to face the way you are, which is what makes "is the venue on
+// my left or my right" answerable while standing on the pavement.
+type LocateMode = 'free' | 'follow' | 'heading'
+
+const NEXT_MODE: Record<LocateMode, LocateMode> = {
+  free: 'follow',
+  follow: 'heading',
+  heading: 'free',
+}
+
+const MODE_ICON: Record<LocateMode, 'locate-outline' | 'locate' | 'navigate'> = {
+  free: 'locate-outline',
+  follow: 'locate',
+  heading: 'navigate',
+}
+
+// Compass readings arrive many times a second and each one is a camera
+// animation. Below this many degrees of change the map would only jitter, and
+// animations closer together than this many ms stack up into a laggy queue.
+const CAMERA_MIN_DEGREES = 2
+const CAMERA_MIN_INTERVAL_MS = 220
 
 // Score pin: rounded tile with a rotated-square pointer tail; 5s carry the
 // gold ring so the best places pop in a cluster.
@@ -192,10 +211,18 @@ export default function MapScreen() {
   const [searchError, setSearchError] = useState<string | null>(null)
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [locationGranted, setLocationGranted] = useState(false)
-  // The heading cone is a street-level cue — at town scale it would be a
-  // wedge covering half a city, so only draw it once we're zoomed in.
-  const [closeZoom, setCloseZoom] = useState(true)
-  const pose = useUserHeading(locationGranted)
+  // Opens in heading mode: the app's job on launch is to orient you where you
+  // are, and a north-up map makes you do that translation yourself. One drag
+  // or one tap drops out of it for browsing.
+  const [locateMode, setLocateMode] = useState<LocateMode>('heading')
+  // Only subscribe to position and compass while a mode actually needs them —
+  // the compass is not free, and most of the time the map is being browsed.
+  const pose = useUserHeading(locationGranted && locateMode !== 'free')
+  const lastCamera = useRef({ at: 0, heading: 0 })
+  // Where search measures from. Seeded by the initial locate and refreshed by
+  // the live pose when a follow mode is running, so results stay sorted around
+  // where you are now rather than where you opened the app.
+  const originRef = useRef<{ lng: number; lat: number } | null>(null)
 
   const load = useCallback(async (region: Region, f: BrowseFilters) => {
     // Panning fast fires several of these, and they can return out of order.
@@ -247,6 +274,9 @@ export default function MapScreen() {
         }
         setLocationGranted(status === 'granted')
         if (status !== 'granted') {
+          // Without location there is nothing to follow or face, and a filled
+          // button would promise behaviour the map cannot deliver.
+          setLocateMode('free')
           if (opts.promptIfDenied) {
             Alert.alert(
               'Location access needed',
@@ -261,6 +291,7 @@ export default function MapScreen() {
           return
         }
         const pos = await Location.getCurrentPositionAsync({})
+        originRef.current = { lng: pos.coords.longitude, lat: pos.coords.latitude }
         const region: Region = {
           latitude: pos.coords.latitude,
           longitude: pos.coords.longitude,
@@ -279,6 +310,42 @@ export default function MapScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [filters],
   )
+
+  // Drives the camera in follow/heading mode. Rotating the whole map beats
+  // drawing our own cone: the previous custom marker had to be rasterised by
+  // the native map on every heading change, which flickered while spinning and
+  // went blank between position updates. The camera has no such problem, and a
+  // course-up map answers "which way am I facing" without a cone at all.
+  useEffect(() => {
+    if (!pose) return
+    originRef.current = { lng: pose.longitude, lat: pose.latitude }
+    if (locateMode === 'free') return
+
+    const now = Date.now()
+    const heading = locateMode === 'heading' ? pose.heading : 0
+    const turned = Math.abs(((heading - lastCamera.current.heading + 540) % 360) - 180)
+    if (now - lastCamera.current.at < CAMERA_MIN_INTERVAL_MS) return
+    if (locateMode === 'heading' && turned < CAMERA_MIN_DEGREES) return
+
+    lastCamera.current = { at: now, heading }
+    mapRef.current?.animateCamera(
+      { center: { latitude: pose.latitude, longitude: pose.longitude }, heading },
+      { duration: 300 },
+    )
+  }, [pose, locateMode])
+
+  // Leaving a mode has to also undo it: dropping straight to `free` from
+  // heading would strand the map at whatever bearing it happened to be on, so
+  // straighten it back to north-up on the way out.
+  const onLocatePress = useCallback(() => {
+    const next = NEXT_MODE[locateMode]
+    setLocateMode(next)
+    if (next === 'free' || next === 'follow') {
+      mapRef.current?.animateCamera({ heading: 0 }, { duration: 300 })
+    }
+    if (next !== 'free') recenterOnUser({ promptIfDenied: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locateMode, recenterOnUser])
 
   // On first launch, try to centre on the user without nagging if denied.
   // Waits for persisted filters to load first so this initial fetch already
@@ -300,7 +367,7 @@ export default function MapScreen() {
     searchDebounce.current = setTimeout(async () => {
       setSearchLoading(true)
       try {
-        setSearchResults(await searchRestaurants(text, filters))
+        setSearchResults(await searchRestaurants(text, filters, originRef.current))
       } catch (e) {
         setSearchError(errorMessage(e))
         setSearchResults([])
@@ -335,8 +402,19 @@ export default function MapScreen() {
   }, [])
 
   const onRegionChangeComplete = (region: Region) => {
+    const prev = regionRef.current
     regionRef.current = region
-    setCloseZoom(region.latitudeDelta <= MAX_CONE_DELTA)
+
+    // Rotating the map reports a region change on every frame of the turn, and
+    // the viewport it covers has not meaningfully moved — without this,
+    // heading mode would refetch pins continuously while you pivot on the
+    // spot. Only a real pan or zoom is worth a request.
+    const moved =
+      Math.abs(region.latitude - prev.latitude) > prev.latitudeDelta / 20 ||
+      Math.abs(region.longitude - prev.longitude) > prev.longitudeDelta / 20 ||
+      Math.abs(region.latitudeDelta - prev.latitudeDelta) > prev.latitudeDelta / 20
+    if (!moved) return
+
     if (debounce.current) clearTimeout(debounce.current)
     debounce.current = setTimeout(() => load(region, filters), 400)
   }
@@ -359,8 +437,10 @@ export default function MapScreen() {
         showsUserLocation
         onRegionChangeComplete={onRegionChangeComplete}
         onPress={() => setSelected(null)}
+        // Dragging the map is a statement that you want to look somewhere
+        // else, so it hands control back rather than fighting the camera.
+        onPanDrag={() => setLocateMode((m) => (m === 'free' ? m : 'free'))}
       >
-        {pose && closeZoom ? <UserHeadingCone pose={pose} /> : null}
         {pins.map((p) => (
           <ScoreMarker key={p.id} pin={p} tracking={tracking} onSelect={onSelectPin} />
         ))}
@@ -448,21 +528,36 @@ export default function MapScreen() {
       </SafeAreaView>
 
       <Pressable
-        onPress={() => recenterOnUser({ promptIfDenied: true })}
+        onPress={onLocatePress}
+        accessibilityRole="button"
+        accessibilityLabel={
+          locateMode === 'free'
+            ? 'Centre the map on my location'
+            : locateMode === 'follow'
+              ? 'Turn the map to face the way I am'
+              : 'Stop following my location'
+        }
         style={[
           styles.locateBtn,
           {
-            backgroundColor: c.card,
-            borderColor: c.controlBorder,
+            // Filled while a mode is active, so the button reads as a state
+            // rather than a one-shot action — you can tell at a glance whether
+            // the map is about to move under you.
+            backgroundColor: locateMode === 'free' ? c.card : c.primary,
+            borderColor: locateMode === 'free' ? c.controlBorder : c.primary,
             bottom: insets.bottom + (selected ? 96 : 20),
           },
         ]}
         hitSlop={8}
       >
         {locating ? (
-          <ActivityIndicator size="small" color={c.primary} />
+          <ActivityIndicator size="small" color={locateMode === 'free' ? c.primary : '#FFFFFF'} />
         ) : (
-          <Ionicons name="locate" size={22} color={c.primary} />
+          <Ionicons
+            name={MODE_ICON[locateMode]}
+            size={22}
+            color={locateMode === 'free' ? c.primary : '#FFFFFF'}
+          />
         )}
       </Pressable>
 

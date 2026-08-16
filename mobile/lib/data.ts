@@ -87,36 +87,28 @@ export async function fetchNear(
   return (data ?? []) as RestaurantNear[]
 }
 
-// Text search by business name or postcode prefix. Same filters as the
-// map/near-me queries apply here too, for consistency with FilterChips.
+// Text search by business name or postcode prefix, nearest first. Same filters
+// as the map/near-me queries apply here too, for consistency with FilterChips.
+//
+// Origin is optional: without location permission there is nothing to measure
+// from, and the server falls back to alphabetical rather than refusing to
+// search.
 export async function searchRestaurants(
   query: string,
   filters: BrowseFilters = EMPTY_FILTERS,
+  origin?: { lng: number; lat: number } | null,
 ): Promise<RestaurantNear[]> {
   const q = query.trim()
   if (!q) return []
-  const isPostcodeish = /\d/.test(q) && q.length <= 8
-  let builder = supabase
-    .from('restaurants')
-    .select('id,name,business_type,address,postcode,rating_value,rating_is_numeric,rating_date')
-    .limit(50)
-
-  builder = isPostcodeish
-    ? builder.ilike('postcode', `${q}%`)
-    : builder.ilike('name', `%${q}%`)
-
-  const ratingValues = toRatingValues(filters)
-  if (ratingValues) {
-    builder = builder.in('rating_value', ratingValues)
-  }
-  if (filters.types && filters.types.length) {
-    builder = builder.in('business_type', filters.types)
-  }
-
-  const { data, error } = await builder
+  const { data, error } = await supabase.rpc('search_restaurants_near', {
+    q,
+    origin_lng: origin?.lng ?? null,
+    origin_lat: origin?.lat ?? null,
+    types: filters.types,
+    rating_values: toRatingValues(filters),
+  })
   if (error) throw error
-  // Shape to RestaurantNear (no distance in a text search).
-  return (data ?? []).map((r) => ({ ...r, distance_m: 0 }) as RestaurantNear)
+  return (data ?? []) as RestaurantNear[]
 }
 
 export async function getRestaurant(id: string): Promise<Restaurant | null> {

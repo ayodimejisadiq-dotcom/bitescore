@@ -3,12 +3,12 @@ import {
   View,
   Text,
   TextInput,
+  FlatList,
   StyleSheet,
   Pressable,
   ActivityIndicator,
   Alert,
   Linking,
-  Keyboard,
 } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import MapView, { Marker, type Region } from 'react-native-maps'
@@ -24,10 +24,11 @@ import { useFilters } from '@/hooks/useFilters'
 import { useUserHeading } from '@/hooks/useUserHeading'
 import { UserHeadingCone } from '@/components/UserHeadingCone'
 import { isNumericRating, BUSINESS_TYPE_LABEL } from '@/lib/fsa'
-import { fetchPins, fetchClusters, type Bounds } from '@/lib/data'
+import { fetchPins, fetchClusters, searchRestaurants, type Bounds } from '@/lib/data'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { errorMessage } from '@/lib/errors'
-import type { BrowseFilters, RestaurantCluster, RestaurantPin } from '@/lib/types'
+import { RestaurantRow } from '@/components/RestaurantRow'
+import type { BrowseFilters, RestaurantCluster, RestaurantPin, RestaurantNear } from '@/lib/types'
 
 // Central London as a sensible default until we have the user's location.
 const DEFAULT_REGION: Region = {
@@ -44,15 +45,6 @@ function regionToBounds(r: Region): Bounds {
     minLat: r.latitude - r.latitudeDelta / 2,
     maxLat: r.latitude + r.latitudeDelta / 2,
   }
-}
-
-// Rough UK-postcode-ish check (same heuristic used for restaurant search):
-// short and contains a digit. Postcodes get a tight zoom; place names
-// ("Manchester") get a wider, city-scale view.
-function regionForQuery(query: string, lat: number, lng: number): Region {
-  const isPostcodeish = /\d/.test(query) && query.trim().length <= 8
-  const delta = isPostcodeish ? 0.03 : 0.2
-  return { latitude: lat, longitude: lng, latitudeDelta: delta, longitudeDelta: delta }
 }
 
 // Above this span, individual pins are both unreadable and far too much native
@@ -194,9 +186,11 @@ export default function MapScreen() {
   const [tracking, setTracking] = useState(true)
   const latestRequest = useRef(0)
   const [locating, setLocating] = useState(false)
-  const [placeQuery, setPlaceQuery] = useState('')
-  const [searchingPlace, setSearchingPlace] = useState(false)
-  const [placeError, setPlaceError] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<RestaurantNear[]>([])
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
+  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [locationGranted, setLocationGranted] = useState(false)
   // The heading cone is a street-level cue — at town scale it would be a
   // wedge covering half a city, so only draw it once we're zoomed in.
@@ -295,29 +289,25 @@ export default function MapScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtersLoaded])
 
-  // Jump the map to a typed place name or postcode — distinct from the
-  // Search tab, which looks up specific restaurants rather than locations.
-  const onSearchPlace = async () => {
-    const query = placeQuery.trim()
-    if (!query) return
-    Keyboard.dismiss()
-    setSearchingPlace(true)
-    setPlaceError(null)
-    try {
-      const results = await Location.geocodeAsync(query)
-      if (!results.length) {
-        setPlaceError('Couldn’t find that place. Try a different spelling or postcode.')
-        return
-      }
-      const region = regionForQuery(query, results[0].latitude, results[0].longitude)
-      regionRef.current = region
-      mapRef.current?.animateToRegion(region, 500)
-      load(region, filters)
-    } catch {
-      setPlaceError('Couldn’t search right now. Check your connection and try again.')
-    } finally {
-      setSearchingPlace(false)
+  const onSearchChange = (text: string) => {
+    setSearchQuery(text)
+    setSearchError(null)
+    if (searchDebounce.current) clearTimeout(searchDebounce.current)
+    if (!text.trim()) {
+      setSearchResults([])
+      return
     }
+    searchDebounce.current = setTimeout(async () => {
+      setSearchLoading(true)
+      try {
+        setSearchResults(await searchRestaurants(text, filters))
+      } catch (e) {
+        setSearchError(errorMessage(e))
+        setSearchResults([])
+      } finally {
+        setSearchLoading(false)
+      }
+    }, 300)
   }
 
   // Give markers a moment to rasterise after the set changes, then stop
@@ -388,28 +378,49 @@ export default function MapScreen() {
         <View style={[styles.search, { backgroundColor: c.card, borderColor: c.controlBorder }]}>
           <Ionicons name="search" size={19} color={c.primary} />
           <TextInput
-            value={placeQuery}
-            onChangeText={(t) => {
-              setPlaceQuery(t)
-              setPlaceError(null)
-            }}
-            onSubmitEditing={onSearchPlace}
-            placeholder="Go to a town or postcode"
+            value={searchQuery}
+            onChangeText={onSearchChange}
+            placeholder="Search restaurants"
             placeholderTextColor={c.placeholder}
             autoCapitalize="none"
             autoCorrect={false}
             returnKeyType="search"
             style={[styles.searchInput, { color: c.text }]}
           />
-          {searchingPlace ? <ActivityIndicator size="small" color={c.primary} /> : null}
+          {searchLoading ? (
+            <ActivityIndicator size="small" color={c.primary} />
+          ) : searchQuery ? (
+            <Pressable
+              onPress={() => { setSearchQuery(''); setSearchResults([]) }}
+              hitSlop={8}
+            >
+              <Ionicons name="close-circle" size={18} color={c.placeholder} />
+            </Pressable>
+          ) : null}
         </View>
-        {placeError ? (
-          <View style={[styles.errorBanner, { backgroundColor: c.card, borderColor: c.controlBorder }]}>
-            <Text style={[styles.errorText, { color: c.subtext }]}>{placeError}</Text>
-          </View>
-        ) : null}
         <FilterChips filters={filters} onChange={onFilters} />
-        {loading ? (
+        {searchQuery ? (
+          searchError ? (
+            <View style={[styles.errorBanner, { backgroundColor: c.card, borderColor: c.controlBorder }]}>
+              <Text style={[styles.errorText, { color: c.subtext }]}>{searchError}</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={searchResults}
+              keyExtractor={(item) => item.id}
+              style={[styles.resultsList, { backgroundColor: c.card, borderColor: c.controlBorder }]}
+              keyboardShouldPersistTaps="handled"
+              ListEmptyComponent={
+                !searchLoading ? (
+                  <Text style={[styles.noResults, { color: c.subtext }]}>No restaurants found</Text>
+                ) : null
+              }
+              renderItem={({ item }) => (
+                <RestaurantRow item={item} onPress={() => router.push(`/restaurant/${item.id}`)} />
+              )}
+            />
+          )
+        ) : loading ? (
           <View style={[styles.loading, { backgroundColor: c.card }]}>
             <ActivityIndicator size="small" color={c.primary} />
           </View>
@@ -430,7 +441,7 @@ export default function MapScreen() {
           <View style={[styles.statusBanner, { backgroundColor: c.card }]}>
             <Text style={[styles.statusTitle, { color: c.text }]}>Nothing rated here yet</Text>
             <Text style={[styles.statusBody, { color: c.mutedOnCard }]}>
-              Try zooming out, or search a town or postcode above.
+              Try zooming out, or search by restaurant name above.
             </Text>
           </View>
         ) : null}
@@ -511,6 +522,16 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
   },
   errorText: { fontSize: 12.5, fontFamily: fonts.body, lineHeight: 18 },
+  resultsList: {
+    marginHorizontal: 14,
+    marginBottom: 8,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    maxHeight: 340,
+    overflow: 'hidden',
+    boxShadow: '0 6px 18px rgba(23,23,15,0.12)',
+  },
+  noResults: { fontSize: 14, fontFamily: fonts.body, textAlign: 'center', padding: 20 },
   pinWrap: { alignItems: 'center' },
   pinTile: {
     alignItems: 'center',

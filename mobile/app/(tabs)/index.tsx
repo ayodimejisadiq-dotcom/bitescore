@@ -211,7 +211,10 @@ export default function MapScreen() {
   const [searchError, setSearchError] = useState<string | null>(null)
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [locationGranted, setLocationGranted] = useState(false)
-  const [locateMode, setLocateMode] = useState<LocateMode>('free')
+  // Opens in heading mode: the app's job on launch is to orient you where you
+  // are, and a north-up map makes you do that translation yourself. One drag
+  // or one tap drops out of it for browsing.
+  const [locateMode, setLocateMode] = useState<LocateMode>('heading')
   // Only subscribe to position and compass while a mode actually needs them —
   // the compass is not free, and most of the time the map is being browsed.
   const pose = useUserHeading(locationGranted && locateMode !== 'free')
@@ -267,6 +270,9 @@ export default function MapScreen() {
         }
         setLocationGranted(status === 'granted')
         if (status !== 'granted') {
+          // Without location there is nothing to follow or face, and a filled
+          // button would promise behaviour the map cannot deliver.
+          setLocateMode('free')
           if (opts.promptIfDenied) {
             Alert.alert(
               'Location access needed',

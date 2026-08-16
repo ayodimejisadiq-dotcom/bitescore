@@ -5,7 +5,7 @@ import { BUSINESS_TYPE_LABEL } from '@/lib/fsa'
 import { ScoreBadge } from './ScoreBadge'
 import type { RestaurantNear } from '@/lib/types'
 
-function distanceLabel(m: number): string | null {
+function distanceLabel(m: number | null): string | null {
   if (!m) return null
   return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`
 }

@@ -223,6 +223,10 @@ export default function MapScreen() {
   // the live pose when a follow mode is running, so results stay sorted around
   // where you are now rather than where you opened the app.
   const originRef = useRef<{ lng: number; lat: number } | null>(null)
+  // The viewport the currently-displayed pins were fetched for. Movement is
+  // judged against this rather than the last region event — see
+  // onRegionChangeComplete.
+  const loadedRegion = useRef<Region | null>(null)
 
   const load = useCallback(async (region: Region, f: BrowseFilters) => {
     // Panning fast fires several of these, and they can return out of order.
@@ -230,6 +234,7 @@ export default function MapScreen() {
     // every marker is torn down and rebuilt, and the work compounds with each
     // pan. Only the newest request is allowed to write state.
     const requestId = ++latestRequest.current
+    loadedRegion.current = region
 
     const clustered = region.latitudeDelta > MAX_PIN_DELTA
     setLoading(true)
@@ -402,7 +407,6 @@ export default function MapScreen() {
   }, [])
 
   const onRegionChangeComplete = (region: Region, details?: { isGesture?: boolean }) => {
-    const prev = regionRef.current
     regionRef.current = region
 
     // Leaving a follow mode is about looking somewhere *else*, not about
@@ -417,14 +421,22 @@ export default function MapScreen() {
       if (strayed) setLocateMode('free')
     }
 
-    // Rotating the map reports a region change on every frame of the turn, and
-    // the viewport it covers has not meaningfully moved — without this,
-    // heading mode would refetch pins continuously while you pivot on the
-    // spot. Only a real pan or zoom is worth a request.
+    // Rotating the map reports a region change on every frame of the turn over
+    // the same ground, so heading mode would otherwise refetch pins
+    // continuously while you pivot on the spot.
+    //
+    // The comparison is against the region we last *fetched* for, not the
+    // previous event. Measuring event-to-event meant a slow drag — dozens of
+    // small changes, none individually past the threshold — never triggered a
+    // fetch however far it travelled, and neither did walking in follow mode,
+    // where the camera advances a step at a time. Pins simply stopped
+    // appearing.
+    const base = loadedRegion.current
     const moved =
-      Math.abs(region.latitude - prev.latitude) > prev.latitudeDelta / 20 ||
-      Math.abs(region.longitude - prev.longitude) > prev.longitudeDelta / 20 ||
-      Math.abs(region.latitudeDelta - prev.latitudeDelta) > prev.latitudeDelta / 20
+      !base ||
+      Math.abs(region.latitude - base.latitude) > base.latitudeDelta / 10 ||
+      Math.abs(region.longitude - base.longitude) > base.longitudeDelta / 10 ||
+      Math.abs(region.latitudeDelta - base.latitudeDelta) > base.latitudeDelta / 10
     if (!moved) return
 
     if (debounce.current) clearTimeout(debounce.current)

@@ -10,6 +10,7 @@ import {
   Linking,
   Platform,
   Share,
+  Modal,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
@@ -20,6 +21,9 @@ import { colorForRating, edgeForRating, NEUTRAL_RATING } from '@/theme/colors'
 import { EdgeButton, tileEdge } from '@/components/ui'
 import { SaveToListModal } from '@/components/SaveToListModal'
 import { ReviewComposer } from '@/components/ReviewComposer'
+import { PaywallGate } from '@/components/PaywallGate'
+import { useSession } from '@/hooks/useSession'
+import { getIsEntitled } from '@/lib/purchases'
 import {
   BUSINESS_TYPE_LABEL,
   isNumericRating,
@@ -33,7 +37,11 @@ import {
   lookupPlaceData,
   reportReview,
   blockUser,
+  isWatchingRestaurant,
+  watchRestaurant,
+  unwatchRestaurant,
 } from '@/lib/data'
+import { registerForPushAfterSave } from '@/lib/push'
 import { recordCheck, recordReview } from '@/lib/game'
 import type { OpeningHours, Restaurant, Review } from '@/lib/types'
 
@@ -79,6 +87,7 @@ function ScaleStrip({ rating }: { rating: string }) {
 export default function RestaurantDetail() {
   const c = useTheme()
   const router = useRouter()
+  const { session } = useSession()
   const { id } = useLocalSearchParams<{ id: string }>()
   const [place, setPlace] = useState<Restaurant | null>(null)
   const [reviews, setReviews] = useState<Review[]>([])
@@ -90,19 +99,28 @@ export default function RestaurantDetail() {
   const [googleRatingCount, setGoogleRatingCount] = useState<number | null>(null)
   const [hours, setHours] = useState<OpeningHours | null>(null)
   const [loadError, setLoadError] = useState(false)
+  const [watching, setWatching] = useState(false)
+  const [watchBusy, setWatchBusy] = useState(false)
+  const [paywallOpen, setPaywallOpen] = useState(false)
 
   const load = () => {
     setLoading(true)
     setLoadError(false)
     ;(async () => {
       try {
-        const [p, r, mine] = await Promise.all([getRestaurant(id), getReviews(id), getMyReview(id)])
+        const [p, r, mine, isWatching] = await Promise.all([
+          getRestaurant(id),
+          getReviews(id),
+          getMyReview(id),
+          isWatchingRestaurant(id),
+        ])
         setPlace(p)
         setReviews(r)
         setMyReview(mine)
         setGoogleRating(p?.google_rating ?? null)
         setGoogleRatingCount(p?.google_rating_count ?? null)
         setHours(p?.hours_cache ?? null)
+        setWatching(isWatching)
         // Game layer: opening a place counts as a "check".
         if (p) recordCheck(p.id, p.rating_value)
       } catch {
@@ -114,6 +132,43 @@ export default function RestaurantDetail() {
   }
 
   useEffect(load, [id])
+
+  // Turning the bell on is the paid action — flips the switch optimistically,
+  // and enrolls for push the same way saving to a list does. Turning it off
+  // never needs an entitlement check.
+  const setWatchState = async (next: boolean) => {
+    setWatchBusy(true)
+    setWatching(next) // optimistic
+    try {
+      if (next) {
+        await watchRestaurant(id)
+        void registerForPushAfterSave()
+      } else {
+        await unwatchRestaurant(id)
+      }
+    } catch {
+      setWatching(!next) // revert
+      Alert.alert('Couldn’t update', 'Check your connection and try again.')
+    } finally {
+      setWatchBusy(false)
+    }
+  }
+
+  const onToggleWatch = async () => {
+    if (watchBusy) return
+    if (watching) {
+      setWatchState(false)
+      return
+    }
+    setWatchBusy(true)
+    const entitled = await getIsEntitled()
+    setWatchBusy(false)
+    if (!entitled) {
+      setPaywallOpen(true)
+      return
+    }
+    setWatchState(true)
+  }
 
   // Fire-and-forget: refreshes Google rating + hours in the background (the
   // server no-ops if its own cache is still fresh, so this is cheap to call
@@ -253,6 +308,27 @@ export default function RestaurantDetail() {
             <Ionicons name="chevron-back" size={22} color={c.text} />
           </Pressable>
           <View style={{ flexDirection: 'row', gap: 8 }}>
+            <Pressable
+              onPress={onToggleWatch}
+              disabled={watchBusy}
+              style={[
+                styles.navBtn,
+                watching
+                  ? { backgroundColor: c.primaryTint, borderColor: c.primary }
+                  : { backgroundColor: c.card, borderColor: c.controlBorder },
+              ]}
+              hitSlop={8}
+            >
+              {watchBusy ? (
+                <ActivityIndicator size="small" color={c.primary} />
+              ) : (
+                <Ionicons
+                  name={watching ? 'notifications' : 'notifications-outline'}
+                  size={20}
+                  color={watching ? c.primary : c.text}
+                />
+              )}
+            </Pressable>
             <Pressable
               onPress={() => setSaveOpen(true)}
               style={[styles.navBtn, { backgroundColor: c.card, borderColor: c.controlBorder }]}
@@ -472,6 +548,22 @@ export default function RestaurantDetail() {
       </View>
 
       <SaveToListModal visible={saveOpen} restaurantId={id} onClose={() => setSaveOpen(false)} />
+
+      <Modal
+        visible={paywallOpen}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setPaywallOpen(false)}
+      >
+        <PaywallGate
+          userId={session?.user.id}
+          onClose={() => setPaywallOpen(false)}
+          onUnlocked={() => {
+            setPaywallOpen(false)
+            setWatchState(true)
+          }}
+        />
+      </Modal>
 
       <ReviewComposer
         visible={composerOpen}

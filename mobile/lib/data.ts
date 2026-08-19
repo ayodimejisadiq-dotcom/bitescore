@@ -392,3 +392,49 @@ export async function setNotificationPrefs(enabled: boolean): Promise<void> {
     .upsert({ user_id: user.id, score_change_enabled: enabled }, { onConflict: 'user_id' })
   if (error) throw error
 }
+
+// ---------------------------------------------------------------------------
+// Restaurant watches — the "notify me when their score changes" bell on the
+// detail page. Distinct from lists: this follows one specific place without
+// requiring it be filed into a list. See migration 0020 for notify_candidates,
+// which is the actual delivery path (and where entitlement is enforced).
+// ---------------------------------------------------------------------------
+
+export async function isWatchingRestaurant(restaurantId: string): Promise<boolean> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return false
+  const { data, error } = await supabase
+    .from('restaurant_watches')
+    .select('restaurant_id')
+    .eq('user_id', user.id)
+    .eq('restaurant_id', restaurantId)
+    .maybeSingle()
+  if (error) throw error
+  return data !== null
+}
+
+export async function watchRestaurant(restaurantId: string): Promise<void> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not signed in')
+  const { error } = await supabase
+    .from('restaurant_watches')
+    .upsert({ user_id: user.id, restaurant_id: restaurantId }, { onConflict: 'user_id,restaurant_id' })
+  if (error) throw error
+}
+
+export async function unwatchRestaurant(restaurantId: string): Promise<void> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not signed in')
+  const { error } = await supabase
+    .from('restaurant_watches')
+    .delete()
+    .eq('user_id', user.id)
+    .eq('restaurant_id', restaurantId)
+  if (error) throw error
+}

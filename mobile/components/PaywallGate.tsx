@@ -9,6 +9,7 @@ import {
   Linking,
   ScrollView,
 } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { PACKAGE_TYPE, PRODUCT_CATEGORY, type PurchasesPackage } from 'react-native-purchases'
 import { useTheme } from '@/theme/useTheme'
@@ -94,6 +95,7 @@ export function PaywallGate({
   onUnlocked,
   userId,
   identityFailed = false,
+  onClose,
 }: {
   onUnlocked: () => void
   // Present so the paywall can re-attempt the RevenueCat login itself.
@@ -101,6 +103,11 @@ export function PaywallGate({
   // True when we could not confirm which customer we're acting as, so
   // "not entitled" may be wrong. Someone who has genuinely paid can land here.
   identityFailed?: boolean
+  // When provided, renders a close button. Set this when the paywall is
+  // shown as a dismissable upsell from a specific feature (map, notifications,
+  // an extra list) rather than the old app-wide launch gate, which had
+  // nothing to dismiss to.
+  onClose?: () => void
 }) {
   const c = useTheme()
   const [packages, setPackages] = useState<PurchasesPackage[] | null>(null)
@@ -182,6 +189,17 @@ export function PaywallGate({
 
   return (
     <View style={[styles.root, { backgroundColor: c.bg }]}>
+      {onClose ? (
+        <SafeAreaView edges={['top']} style={styles.closeArea} pointerEvents="box-none">
+          <Pressable
+            onPress={onClose}
+            style={[styles.closeBtn, { backgroundColor: c.card, borderColor: c.controlBorder }]}
+            hitSlop={8}
+          >
+            <Ionicons name="close" size={20} color={c.text} />
+          </Pressable>
+        </SafeAreaView>
+      ) : null}
       <ScrollView contentContainerStyle={styles.scroll}>
         <BadgeFan />
         <Text style={[styles.title, { color: c.text }]}>Unlock Bitescore</Text>
@@ -314,6 +332,24 @@ export function PaywallGate({
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  closeArea: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    alignItems: 'flex-end',
+    zIndex: 10,
+  },
+  closeBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 20,
+    marginTop: 6,
+  },
   scroll: { paddingHorizontal: 24, paddingTop: 40, paddingBottom: 24, alignItems: 'center' },
   title: { fontSize: 32, fontFamily: fonts.display800, letterSpacing: -0.6, textAlign: 'center' },
   subtitle: {

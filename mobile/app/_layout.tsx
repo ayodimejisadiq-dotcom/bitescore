@@ -14,8 +14,7 @@ import { DMSans_400Regular, DMSans_500Medium, DMSans_700Bold } from '@expo-googl
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { ensureSession } from '@/lib/auth'
 import { useSession } from '@/hooks/useSession'
-import { configurePurchases, loginPurchases, getIsEntitled } from '@/lib/purchases'
-import { PaywallGate } from '@/components/PaywallGate'
+import { configurePurchases, loginPurchases } from '@/lib/purchases'
 import { restaurantIdFromNotificationResponse } from '@/lib/push'
 import { useTheme } from '@/theme/useTheme'
 
@@ -41,8 +40,6 @@ if (__DEV__) {
 export default function RootLayout() {
   const c = useTheme()
   const { session, loading: sessionLoading } = useSession()
-  const [entitled, setEntitled] = useState<boolean | null>(null)
-  const [identityFailed, setIdentityFailed] = useState(false)
   const router = useRouter()
   const [fontsLoaded] = useFonts({
     BricolageGrotesque_600SemiBold,
@@ -91,21 +88,21 @@ export default function RootLayout() {
     })
   }, [])
 
-  // Links the RevenueCat customer to this Supabase user, then checks
-  // entitlement — the whole app is gated behind the paywall until this
-  // resolves true (see PaywallGate.tsx for the purchase/restore flow).
+  // Links the RevenueCat customer to this Supabase user. The app itself is
+  // no longer gated on this resolving — Bitescore is freemium, so screens
+  // that need to know entitlement (the map, notifications, extra lists)
+  // check it themselves, in context, via getIsEntitled()/PaywallGate. This
+  // just has to run before any of those checks so they answer about the
+  // right customer: RevenueCat persists the last app user id across
+  // launches, so without a confirmed login here, an entitlement check
+  // elsewhere could report on whichever customer the SDK was left on.
   useEffect(() => {
     if (!session) return
-    ;(async () => {
-      // Identity has to be established before the entitlement answer means
-      // anything: RevenueCat persists the last app user id across launches, so
-      // without a confirmed login this reports on whichever customer the SDK
-      // was left on. Pass the result down so the paywall can distinguish
-      // "you haven't bought this" from "we couldn't check".
-      const identified = await loginPurchases(session.user.id)
-      setIdentityFailed(!identified)
-      setEntitled(await getIsEntitled())
-    })()
+    loginPurchases(session.user.id).catch(() => {
+      // Best-effort — a feature-level entitlement check that runs before
+      // this resolves will retry identity itself (see PaywallGate's
+      // identityFailed/retryIdentityAndEntitlement path).
+    })
   }, [session?.user.id])
 
   const [splashHeld, setSplashHeld] = useState(true)
@@ -114,7 +111,7 @@ export default function RootLayout() {
     return () => clearTimeout(t)
   }, [])
 
-  const stillChecking = !fontsLoaded || sessionLoading || (session && entitled === null)
+  const stillChecking = !fontsLoaded || sessionLoading
 
   // Drop the splash only once the minimum has elapsed *and* there is something
   // real behind it — otherwise it would hand over to the spinner, which is a
@@ -131,12 +128,6 @@ export default function RootLayout() {
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: c.bg }}>
           <ActivityIndicator color={c.primary} />
         </View>
-      ) : entitled === false ? (
-        <PaywallGate
-          userId={session?.user.id}
-          identityFailed={identityFailed}
-          onUnlocked={() => setEntitled(true)}
-        />
       ) : (
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="(tabs)" />

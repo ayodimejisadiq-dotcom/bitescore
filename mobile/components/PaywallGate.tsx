@@ -33,6 +33,22 @@ import { BadgeFan } from './BadgeFan'
 // rendering it natively guarantees all of that regardless of dashboard
 // state, and lets us surface real error messages instead of a dead screen.
 
+const LENGTH_LABEL: Partial<Record<PACKAGE_TYPE, string>> = {
+  [PACKAGE_TYPE.WEEKLY]: '1 week',
+  [PACKAGE_TYPE.MONTHLY]: '1 month',
+  [PACKAGE_TYPE.TWO_MONTH]: '2 months',
+  [PACKAGE_TYPE.THREE_MONTH]: '3 months',
+  [PACKAGE_TYPE.SIX_MONTH]: '6 months',
+  [PACKAGE_TYPE.ANNUAL]: '1 year',
+  [PACKAGE_TYPE.LIFETIME]: 'One-time purchase',
+}
+
+// Yearly first, lifetime second, anything unexpected last.
+const DISPLAY_ORDER: Partial<Record<PACKAGE_TYPE, number>> = {
+  [PACKAGE_TYPE.ANNUAL]: 0,
+  [PACKAGE_TYPE.LIFETIME]: 1,
+}
+
 const FEATURES: { title: string; body: string }[] = [
   {
     title: 'EAT WITH CONFIDENCE',
@@ -96,6 +112,7 @@ export function PaywallGate({
   const c = useTheme()
   const [packages, setPackages] = useState<PurchasesPackage[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(null)
   const [buying, setBuying] = useState(false)
   const [restoring, setRestoring] = useState(false)
 
@@ -113,12 +130,15 @@ export function PaywallGate({
     }
     try {
       const offering = await getOfferings()
-      const pkgs = offering?.availablePackages ?? []
+      const pkgs = [...(offering?.availablePackages ?? [])].sort(
+        (a, b) => (DISPLAY_ORDER[a.packageType] ?? 9) - (DISPLAY_ORDER[b.packageType] ?? 9),
+      )
       if (pkgs.length === 0) {
-        setLoadError('Bitescore Pro isn’t available right now. Check your connection and try again.')
+        setLoadError('Plans aren’t available right now. Check your connection and try again.')
         return
       }
       setPackages(pkgs)
+      setSelected((prev) => prev ?? pkgs[0].identifier)
     } catch (e) {
       setLoadError(errorMessage(e))
     }
@@ -128,11 +148,7 @@ export function PaywallGate({
     load()
   }, [load])
 
-  // Single one-time-purchase offering: pick the lifetime package if the
-  // Offering ever carries more than one (e.g. mid-migration off the old
-  // annual plan), otherwise whatever's there.
-  const selectedPkg =
-    packages?.find((p) => p.packageType === PACKAGE_TYPE.LIFETIME) ?? packages?.[0] ?? null
+  const selectedPkg = packages?.find((p) => p.identifier === selected) ?? null
 
   const onBuy = async () => {
     if (!selectedPkg || buying) return
@@ -220,14 +236,43 @@ export function PaywallGate({
           </>
         ) : (
           <>
-            {selectedPkg ? (
-              <View style={styles.priceBlock}>
-                <Text style={[styles.priceHeadline, { color: c.text }]}>{priceLine(selectedPkg)}</Text>
-                <Text style={[styles.priceSub, { color: c.mutedOnCard }]}>
-                  {isAutoRenewing(selectedPkg) ? 'Renews automatically' : 'One-time payment'}
-                </Text>
-              </View>
-            ) : null}
+            <View style={styles.plans}>
+              {packages!.map((pkg) => {
+                const active = pkg.identifier === selected
+                return (
+                  <Pressable
+                    key={pkg.identifier}
+                    onPress={() => setSelected(pkg.identifier)}
+                    style={[
+                      styles.plan,
+                      {
+                        backgroundColor: active ? c.primaryTint : c.bg,
+                        borderColor: active ? c.primary : c.controlBorder,
+                        borderWidth: active ? 2 : 1.5,
+                      },
+                    ]}
+                  >
+                    <View style={styles.planHead}>
+                      <Text style={[styles.planTitle, { color: c.text }]} numberOfLines={1}>
+                        {pkg.product.title}
+                      </Text>
+                      <Ionicons
+                        name={active ? 'checkmark-circle' : 'ellipse-outline'}
+                        size={22}
+                        color={active ? c.primary : c.dashedBorderDark}
+                      />
+                    </View>
+                    <Text style={[styles.planPrice, { color: c.text }]}>{priceLine(pkg)}</Text>
+                    {LENGTH_LABEL[pkg.packageType] ? (
+                      <Text style={[styles.planLength, { color: c.mutedOnCard }]}>
+                        {LENGTH_LABEL[pkg.packageType]}
+                        {isAutoRenewing(pkg) ? ' · renews automatically' : ''}
+                      </Text>
+                    ) : null}
+                  </Pressable>
+                )
+              })}
+            </View>
 
             <EdgeButton
               color={c.primary}
@@ -238,11 +283,7 @@ export function PaywallGate({
               onPress={onBuy}
               style={styles.cta}
             >
-              {buying ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.ctaText}>Unlock Bitescore</Text>
-              )}
+              {buying ? <ActivityIndicator color="#fff" /> : <Text style={styles.ctaText}>Continue</Text>}
             </EdgeButton>
 
             {selectedPkg && isAutoRenewing(selectedPkg) ? (
@@ -328,9 +369,12 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 28,
   },
-  priceBlock: { alignItems: 'center' },
-  priceHeadline: { fontSize: 36, fontFamily: fonts.display800, letterSpacing: -0.6 },
-  priceSub: { fontSize: 13.5, fontFamily: fonts.body, marginTop: 4 },
+  plans: { flexDirection: 'row', gap: 10 },
+  plan: { flex: 1, borderRadius: 18, paddingVertical: 13, paddingHorizontal: 14 },
+  planHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
+  planTitle: { flex: 1, fontSize: 15, fontFamily: fonts.display600 },
+  planPrice: { fontSize: 18, fontFamily: fonts.display800, marginTop: 4 },
+  planLength: { fontSize: 12, fontFamily: fonts.body, marginTop: 3 },
   cta: { height: 56, alignItems: 'center', justifyContent: 'center', marginTop: 14 },
   ctaText: { color: '#fff', fontSize: 17, fontFamily: fonts.display600 },
   fineprint: { fontSize: 11.5, fontFamily: fonts.body, lineHeight: 16, textAlign: 'center', marginTop: 12 },

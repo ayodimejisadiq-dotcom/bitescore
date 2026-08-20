@@ -24,6 +24,9 @@ export interface RestaurantNear {
   id: string
   name: string
   business_type: string
+  // Best-effort name-keyword guess (see lib/fsa.ts classifyCuisine) — null
+  // for most venues until a Google Places backfill can do better.
+  cuisine: string | null
   address: string | null
   postcode: string | null
   rating_value: string
@@ -40,6 +43,7 @@ export interface Restaurant {
   name: string
   business_type: string
   business_type_id: number | null
+  cuisine: string | null
   address: string | null
   postcode: string | null
   local_authority: string | null
@@ -86,11 +90,13 @@ export interface BrowseFilters {
   // never inspected, etc.
   ratings: RatingValue[] | null
   types: string[] | null // FSA business_type filter
+  cuisines: string[] | null // name-keyword cuisine guess, see lib/fsa.ts
 }
 
 export const EMPTY_FILTERS: BrowseFilters = {
   ratings: null,
   types: null,
+  cuisines: null,
 }
 
 export interface ListItemRestaurant {

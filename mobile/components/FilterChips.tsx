@@ -1,7 +1,7 @@
-import { ScrollView, Pressable, Text, StyleSheet } from 'react-native'
+import { View, ScrollView, Pressable, Text, StyleSheet } from 'react-native'
 import { useTheme } from '@/theme/useTheme'
 import { fonts } from '@/theme/type'
-import { BUSINESS_TYPE_LABEL, DINING_BUSINESS_TYPES } from '@/lib/fsa'
+import { BUSINESS_TYPE_LABEL, DINING_BUSINESS_TYPES, CUISINES, CUISINE_LABEL } from '@/lib/fsa'
 import { tileEdge } from './ui'
 import { RatingDropdown } from './RatingDropdown'
 import type { BrowseFilters } from '@/lib/types'
@@ -24,6 +24,12 @@ export function FilterChips({
     onChange({ ...filters, types: set.size ? Array.from(set) : null })
   }
 
+  const toggleCuisine = (cuisine: string) => {
+    const set = new Set(filters.cuisines ?? [])
+    set.has(cuisine) ? set.delete(cuisine) : set.add(cuisine)
+    onChange({ ...filters, cuisines: set.size ? Array.from(set) : null })
+  }
+
   return (
     <ScrollView
       horizontal
@@ -41,6 +47,16 @@ export function FilterChips({
           label={BUSINESS_TYPE_LABEL[t] ?? t}
           active={(filters.types ?? []).includes(t)}
           onPress={() => toggleType(t)}
+          c={c}
+        />
+      ))}
+      <View style={[styles.divider, { backgroundColor: c.border }]} />
+      {CUISINES.map((cuisine) => (
+        <Chip
+          key={cuisine}
+          label={CUISINE_LABEL[cuisine]}
+          active={(filters.cuisines ?? []).includes(cuisine)}
+          onPress={() => toggleCuisine(cuisine)}
           c={c}
         />
       ))}
@@ -77,6 +93,7 @@ function Chip({
 const styles = StyleSheet.create({
   scroll: { flexGrow: 0 },
   row: { gap: 8, paddingHorizontal: 14, paddingVertical: 4, alignItems: 'center' },
+  divider: { width: 1.5, height: 22, borderRadius: 1, marginHorizontal: 2 },
   chip: {
     height: 38,
     borderRadius: 12,

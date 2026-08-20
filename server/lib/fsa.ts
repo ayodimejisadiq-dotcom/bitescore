@@ -48,6 +48,7 @@ export interface RestaurantRow {
   lat: number | null
   rating_value: string
   rating_date: string | null
+  cuisine: string | null
 }
 
 async function fsaFetch<T>(path: string, attempt = 0): Promise<T> {
@@ -98,6 +99,33 @@ function normalizedBusinessType(fsaType: string, name: string): string {
   return CAFE_KEYWORDS.test(name) ? 'Cafe' : 'Restaurant'
 }
 
+// Cuisine v1: a best-effort name-keyword heuristic, same idea as the
+// Restaurant/Cafe split above — FSA has no cuisine field at all, so this is
+// the cheap layer that ships before a Google Places backfill can populate a
+// real cuisine per venue. First matching pattern wins; most venues won't
+// match anything, which just means "no cuisine filter shows this place" —
+// still browsable everywhere else. Kept in sync with the identical list in
+// mobile/lib/fsa.ts (classifyCuisine), and with migration 0021's one-time
+// backfill of pre-existing rows.
+const CUISINE_PATTERNS: [string, RegExp][] = [
+  ['thai', /\bthai\b/i],
+  ['chinese', /\bchinese\b/i],
+  ['indian', /\bindian\b|\btandoori\b|\bbalti\b/i],
+  ['italian', /\bitalian\b|\btrattoria\b/i],
+  ['pizza', /\bpizzas?\b|\bpizzeria\b/i],
+  ['burger', /\bburgers?\b/i],
+  ['japanese', /\bsushi\b|\bjapanese\b|\bramen\b/i],
+  ['mexican', /\bmexican\b|\btaqueria\b|\bburritos?\b/i],
+  ['turkish', /\bturkish\b|\bkebabs?\b/i],
+  ['fish_and_chips', /\bfish\s*(&|and)\s*chips?\b|\bchippy\b/i],
+  ['greek', /\bgreek\b|\btaverna\b/i],
+  ['caribbean', /\bcaribbean\b|\bjerk\b/i],
+]
+
+export function classifyCuisine(name: string): string | null {
+  return CUISINE_PATTERNS.find(([, pattern]) => pattern.test(name))?.[0] ?? null
+}
+
 function num(s: string | null | undefined): number | null {
   if (s === null || s === undefined || s === '') return null
   const n = Number(s)
@@ -130,5 +158,6 @@ export function toRow(e: FsaEstablishment): RestaurantRow {
     rating_date: /^[0-5]$/.test((e.RatingValue ?? '').trim()) && e.RatingDate
       ? e.RatingDate.slice(0, 10)
       : null,
+    cuisine: classifyCuisine(e.BusinessName),
   }
 }

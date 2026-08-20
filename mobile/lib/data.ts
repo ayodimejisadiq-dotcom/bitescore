@@ -44,6 +44,7 @@ export async function fetchPins(
     types: filters.types,
     max_rows: maxRows,
     rating_values: toRatingValues(filters),
+    cuisines: filters.cuisines,
   })
   if (error) throw error
   return (data ?? []) as RestaurantPin[]
@@ -64,6 +65,7 @@ export async function fetchClusters(
     cells,
     types: filters.types,
     rating_values: toRatingValues(filters),
+    cuisines: filters.cuisines,
   })
   if (error) throw error
   // n is a bigint server-side, which PostgREST may serialise as a string.
@@ -82,6 +84,7 @@ export async function fetchNear(
     radius_m: radiusM,
     types: filters.types,
     rating_values: toRatingValues(filters),
+    cuisines: filters.cuisines,
   })
   if (error) throw error
   return (data ?? []) as RestaurantNear[]
@@ -106,6 +109,7 @@ export async function searchRestaurants(
     origin_lat: origin?.lat ?? null,
     types: filters.types,
     rating_values: toRatingValues(filters),
+    cuisines: filters.cuisines,
   })
   if (error) throw error
   return (data ?? []) as RestaurantNear[]

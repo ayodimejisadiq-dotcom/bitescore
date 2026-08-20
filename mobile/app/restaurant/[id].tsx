@@ -26,6 +26,7 @@ import { useSession } from '@/hooks/useSession'
 import { getIsEntitled } from '@/lib/purchases'
 import {
   BUSINESS_TYPE_LABEL,
+  cuisineLabel,
   isNumericRating,
   ratingDescription,
   inspectionStatusLine,
@@ -295,6 +296,9 @@ export default function RestaurantDetail() {
   const category = BUSINESS_TYPE_LABEL[place.business_type] ?? place.business_type
   const categoryOne =
     category.endsWith('s') && !category.includes('&') ? category.slice(0, -1) : category
+  // "Thai Restaurant" reads better than a separate cuisine pill.
+  const cuisine = cuisineLabel(place.cuisine)
+  const categoryPillText = cuisine ? `${cuisine} ${categoryOne}` : categoryOne
 
   return (
     <SafeAreaView edges={['top']} style={[styles.root, { backgroundColor: c.bg }]}>
@@ -348,7 +352,7 @@ export default function RestaurantDetail() {
 
         <View style={[styles.catPill, { backgroundColor: c.primaryTint }]}>
           <View style={[styles.catDot, { backgroundColor: c.primary }]} />
-          <Text style={[styles.catText, { color: c.primary }]}>{categoryOne.toUpperCase()}</Text>
+          <Text style={[styles.catText, { color: c.primary }]}>{categoryPillText.toUpperCase()}</Text>
         </View>
         <Text style={[styles.name, { color: c.text }]}>{place.name}</Text>
         {place.address ? (

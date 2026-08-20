@@ -1,7 +1,7 @@
 import { Pressable, View, Text, StyleSheet } from 'react-native'
 import { useTheme } from '@/theme/useTheme'
 import { fonts } from '@/theme/type'
-import { BUSINESS_TYPE_LABEL } from '@/lib/fsa'
+import { BUSINESS_TYPE_LABEL, cuisineLabel } from '@/lib/fsa'
 import { ScoreBadge } from './ScoreBadge'
 import type { RestaurantNear } from '@/lib/types'
 
@@ -24,7 +24,10 @@ export function RestaurantRow({
   const category = BUSINESS_TYPE_LABEL[item.business_type] ?? item.business_type
   // Singularise the chip label for a single place ("Takeaways" → "Takeaway").
   const categoryOne = category.endsWith('s') && !category.includes('&') ? category.slice(0, -1) : category
-  const sub = [categoryOne, item.address, distanceLabel(item.distance_m)].filter(Boolean).join(' · ')
+  // "Thai Restaurant" reads better than a separate "Thai" segment.
+  const cuisine = cuisineLabel(item.cuisine)
+  const categoryText = cuisine ? `${cuisine} ${categoryOne}` : categoryOne
+  const sub = [categoryText, item.address, distanceLabel(item.distance_m)].filter(Boolean).join(' · ')
 
   return (
     <Pressable

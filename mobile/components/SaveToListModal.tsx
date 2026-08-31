@@ -164,7 +164,7 @@ export function SaveToListModal({
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(23,23,15,0.36)', alignItems: 'center', justifyContent: 'center' },
   card: { width: '85%', borderRadius: 24, padding: 20 },
-  title: { fontSize: 21, fontFamily: fonts.display800, marginBottom: 6 },
+  title: { fontSize: 21, fontFamily: fonts.display800, letterSpacing: -0.3, marginBottom: 6 },
   p: { fontSize: 14, fontFamily: fonts.body, lineHeight: 20 },
   row: {
     flexDirection: 'row',

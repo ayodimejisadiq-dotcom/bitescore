@@ -368,13 +368,13 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 32, fontFamily: fonts.display800, letterSpacing: -0.6 },
   fab: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  h: { fontSize: 24, fontFamily: fonts.display800, marginTop: 6 },
+  h: { fontSize: 24, fontFamily: fonts.display800, letterSpacing: -0.5, marginTop: 6 },
   p: { fontSize: 14, fontFamily: fonts.body, textAlign: 'center', lineHeight: 20 },
   retryBtn: { marginTop: 14, paddingHorizontal: 24, paddingVertical: 13 },
   btnText: { color: '#fff', fontFamily: fonts.display600, fontSize: 16 },
   statRow: { flexDirection: 'row', gap: 9, marginBottom: 16 },
   statCard: { flex: 1, borderRadius: 18, paddingVertical: 12, paddingHorizontal: 13 },
-  statNumDark: { color: '#fff', fontSize: 26, fontFamily: fonts.display800, lineHeight: 30 },
+  statNumDark: { color: '#fff', fontSize: 26, fontFamily: fonts.display800, letterSpacing: -0.5, lineHeight: 30 },
   statLabel: { fontSize: 12, fontFamily: fonts.body, marginTop: 2 },
   listCard: {
     borderRadius: 20,
@@ -423,7 +423,7 @@ const styles = StyleSheet.create({
   },
   newSlotText: { fontSize: 16, fontFamily: fonts.display600 },
   emptyWrap: { alignItems: 'center', paddingHorizontal: 32, marginTop: 90 },
-  emptyTitle: { fontSize: 24, fontFamily: fonts.display800 },
+  emptyTitle: { fontSize: 24, fontFamily: fonts.display800, letterSpacing: -0.5 },
   emptyBody: {
     fontSize: 15,
     fontFamily: fonts.body,
@@ -457,7 +457,7 @@ const styles = StyleSheet.create({
     padding: 20,
     boxShadow: '0 22px 50px rgba(23,23,15,0.34)',
   },
-  modalTitle: { fontSize: 21, fontFamily: fonts.display800 },
+  modalTitle: { fontSize: 21, fontFamily: fonts.display800, letterSpacing: -0.3 },
   modalSub: { fontSize: 13.5, fontFamily: fonts.body, marginTop: 3 },
   input: {
     marginTop: 14,

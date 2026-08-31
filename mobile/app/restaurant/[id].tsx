@@ -543,7 +543,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   heroNum: { fontSize: 44, fontFamily: fonts.display800 },
-  heroWord: { color: '#fff', fontSize: 26, fontFamily: fonts.display800 },
+  heroWord: { color: '#fff', fontSize: 26, fontFamily: fonts.display800, letterSpacing: -0.5 },
   heroMeta: {
     color: 'rgba(255,255,255,0.92)',
     fontSize: 13.5,

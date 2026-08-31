@@ -133,7 +133,7 @@ export function ReviewComposer({
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(23,23,15,0.36)', alignItems: 'center', justifyContent: 'center' },
   card: { width: '88%', borderRadius: 24, padding: 20 },
-  title: { fontSize: 21, fontFamily: fonts.display800, marginBottom: 12 },
+  title: { fontSize: 21, fontFamily: fonts.display800, letterSpacing: -0.3, marginBottom: 12 },
   input: {
     borderRadius: 16,
     borderWidth: 1.5,

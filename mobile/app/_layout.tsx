@@ -7,10 +7,11 @@ import * as SplashScreen from 'expo-splash-screen'
 import { StatusBar } from 'expo-status-bar'
 import { useFonts } from 'expo-font'
 import {
-  BricolageGrotesque_600SemiBold,
-  BricolageGrotesque_800ExtraBold,
-} from '@expo-google-fonts/bricolage-grotesque'
-import { DMSans_400Regular, DMSans_500Medium, DMSans_700Bold } from '@expo-google-fonts/dm-sans'
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
+} from '@expo-google-fonts/inter'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { ensureSession } from '@/lib/auth'
 import { useSession } from '@/hooks/useSession'
@@ -45,11 +46,10 @@ export default function RootLayout() {
   const [identityFailed, setIdentityFailed] = useState(false)
   const router = useRouter()
   const [fontsLoaded] = useFonts({
-    BricolageGrotesque_600SemiBold,
-    BricolageGrotesque_800ExtraBold,
-    DMSans_400Regular,
-    DMSans_500Medium,
-    DMSans_700Bold,
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
   })
 
   // Deep-links a tapped score-change notification straight to that

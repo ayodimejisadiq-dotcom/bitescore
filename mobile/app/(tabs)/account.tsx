@@ -587,7 +587,7 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 13.5, fontFamily: fonts.body, marginTop: 2 },
   statRow: { flexDirection: 'row', gap: 9, marginTop: 16 },
   statCard: { flex: 1, borderRadius: 19, padding: 13 },
-  statNumOnDark: { color: '#fff', fontSize: 28, fontFamily: fonts.display800, lineHeight: 30 },
+  statNumOnDark: { color: '#fff', fontSize: 28, fontFamily: fonts.display800, letterSpacing: -0.5, lineHeight: 30 },
   statLabel: { fontSize: 12, fontFamily: fonts.body, marginTop: 2 },
   card: { borderRadius: 20, borderWidth: 1.5, padding: 16, marginTop: 14 },
   cardSpaced: {},

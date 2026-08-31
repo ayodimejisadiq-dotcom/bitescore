@@ -207,7 +207,7 @@ const styles = StyleSheet.create({
   },
   sort: { fontSize: 12.5, fontFamily: fonts.bodyMedium },
   empty: { alignItems: 'center', marginTop: 48, paddingHorizontal: 40 },
-  emptyTitle: { fontSize: 24, fontFamily: fonts.display800 },
+  emptyTitle: { fontSize: 24, fontFamily: fonts.display800, letterSpacing: -0.5 },
   emptyBody: {
     fontSize: 15,
     fontFamily: fonts.body,

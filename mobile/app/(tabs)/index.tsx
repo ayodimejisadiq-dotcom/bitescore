@@ -21,6 +21,7 @@ import { colorForRating, edgeForRating, NEUTRAL_RATING } from '@/theme/colors'
 import { tileEdge } from '@/components/ui'
 import { FilterChips } from '@/components/FilterChips'
 import { useFilters } from '@/hooks/useFilters'
+import { useSavedIds } from '@/hooks/useSavedIds'
 import { useUserHeading } from '@/hooks/useUserHeading'
 import { isNumericRating, BUSINESS_TYPE_LABEL } from '@/lib/fsa'
 import { fetchPins, fetchClusters, searchRestaurants, type Bounds } from '@/lib/data'
@@ -194,6 +195,7 @@ export default function MapScreen() {
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [filters, setFilters, filtersLoaded] = useFilters()
+  const savedIds = useSavedIds()
   const [pins, setPins] = useState<RestaurantPin[]>([])
   const [selected, setSelected] = useState<RestaurantPin | null>(null)
   const [loading, setLoading] = useState(false)
@@ -509,6 +511,9 @@ export default function MapScreen() {
             <FlatList
               data={searchResults}
               keyExtractor={(item) => item.id}
+              // Saved state lives outside `data`, so FlatList needs telling
+              // that it affects what a row renders.
+              extraData={savedIds}
               style={[styles.resultsList, { backgroundColor: c.card, borderColor: c.controlBorder }]}
               keyboardShouldPersistTaps="handled"
               ListEmptyComponent={
@@ -517,7 +522,11 @@ export default function MapScreen() {
                 ) : null
               }
               renderItem={({ item }) => (
-                <RestaurantRow item={item} onPress={() => router.push(`/restaurant/${item.id}`)} />
+                <RestaurantRow
+                  item={item}
+                  saved={savedIds.has(item.id)}
+                  onPress={() => router.push(`/restaurant/${item.id}`)}
+                />
               )}
             />
           )

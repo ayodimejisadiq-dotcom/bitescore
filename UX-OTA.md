@@ -43,17 +43,15 @@ bar on every screen.
 
 Fix is one word: `<StatusBar style="dark" />`.
 
-### 2. The "SAVED" chip is dead code
+### 2. ~~The "SAVED" chip is dead code~~ — done
 
-`RestaurantRow` accepts `saved?: boolean` and renders a green SAVED pill for it
-(`components/RestaurantRow.tsx:21,49`), but neither call site passes it —
-`app/(tabs)/index.tsx:520` and `app/(tabs)/search.tsx:175` both omit it. So
-search results and map results never tell you which places you have already
-saved, and you find out only by opening the place.
+`RestaurantRow` accepted `saved?: boolean` and rendered a green SAVED pill for
+it, but neither call site passed it, so search and map results never showed
+which places were already on a list.
 
-`fetchMyLists()` already returns every saved restaurant id. Load it once per
-screen focus into a `Set` and pass `saved={savedIds.has(item.id)}`. The UI is
-already written.
+Fixed by `hooks/useSavedIds.ts` — a focus-refetched `Set` of saved restaurant
+ids backed by `fetchSavedRestaurantIds()`, now passed by both the map and
+search result lists.
 
 ### 3. Mixed apostrophes in visible copy
 

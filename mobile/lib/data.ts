@@ -259,6 +259,19 @@ export async function fetchMyLists(): Promise<ListWithItems[]> {
   }))
 }
 
+// Just the restaurant ids the user has saved anywhere, for marking rows that
+// are already on a list. RLS on `list_items` is gated on ownership of the
+// parent list, so an unfiltered select returns this user's saved ids and
+// nobody else's. Deliberately not built on fetchMyLists(): that joins the
+// full restaurant record for every saved place, which is a lot of payload to
+// answer a question that only needs ids.
+export async function fetchSavedRestaurantIds(): Promise<string[]> {
+  const { data, error } = await supabase.from('list_items').select('restaurant_id')
+  if (error) throw error
+  // The same place can sit on several lists; callers want a membership test.
+  return Array.from(new Set((data ?? []).map((r: { restaurant_id: string }) => r.restaurant_id)))
+}
+
 export async function createList(name: string): Promise<string> {
   const {
     data: { user },

@@ -18,6 +18,7 @@ import { RestaurantRow } from '@/components/RestaurantRow'
 import { FilterChips } from '@/components/FilterChips'
 import { BadgeFan } from '@/components/BadgeFan'
 import { useFilters } from '@/hooks/useFilters'
+import { useSavedIds } from '@/hooks/useSavedIds'
 import { fetchNear, searchRestaurants } from '@/lib/data'
 import { isNumericRating } from '@/lib/fsa'
 import { errorMessage } from '@/lib/errors'
@@ -35,6 +36,7 @@ export default function SearchScreen() {
   const [sort, setSort] = useState<Sort>('closest')
   const [error, setError] = useState<string | null>(null)
   const [filters, setFilters, filtersLoaded] = useFilters()
+  const savedIds = useSavedIds()
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const loadNearby = async (f: BrowseFilters) => {
@@ -144,6 +146,9 @@ export default function SearchScreen() {
         <FlatList
           data={sorted}
           keyExtractor={(item) => item.id}
+          // Saved state lives outside `data`, so FlatList needs telling that
+          // it affects what a row renders.
+          extraData={savedIds}
           contentContainerStyle={{ paddingTop: 12, paddingBottom: 24 }}
           ListHeaderComponent={
             <View style={styles.sectionRow}>
@@ -172,7 +177,11 @@ export default function SearchScreen() {
             </View>
           }
           renderItem={({ item }) => (
-            <RestaurantRow item={item} onPress={() => router.push(`/restaurant/${item.id}`)} />
+            <RestaurantRow
+              item={item}
+              saved={savedIds.has(item.id)}
+              onPress={() => router.push(`/restaurant/${item.id}`)}
+            />
           )}
         />
       )}

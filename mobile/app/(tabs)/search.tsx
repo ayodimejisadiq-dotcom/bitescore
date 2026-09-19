@@ -4,9 +4,11 @@ import {
   Text,
   TextInput,
   FlatList,
+  ScrollView,
   Pressable,
   StyleSheet,
   ActivityIndicator,
+  Keyboard,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import * as Location from 'expo-location'
@@ -18,6 +20,7 @@ import { RestaurantRow } from '@/components/RestaurantRow'
 import { FilterChips } from '@/components/FilterChips'
 import { BadgeFan } from '@/components/BadgeFan'
 import { useFilters } from '@/hooks/useFilters'
+import { useSearchHistory } from '@/hooks/useSearchHistory'
 import { fetchNear, searchRestaurants } from '@/lib/data'
 import { isNumericRating } from '@/lib/fsa'
 import { errorMessage } from '@/lib/errors'
@@ -35,7 +38,32 @@ export default function SearchScreen() {
   const [sort, setSort] = useState<Sort>('closest')
   const [error, setError] = useState<string | null>(null)
   const [filters, setFilters, filtersLoaded] = useFilters()
+  const [focused, setFocused] = useState(false)
+  const { history, add: addSearch, remove: removeSearch, clear: clearHistory } = useSearchHistory()
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Recent searches show as a dropdown when the bar is focused and empty.
+  const showHistory = focused && !query.trim() && history.length > 0
+
+  // Re-run a picked recent search immediately (no debounce) and float it back
+  // to the top of the history.
+  const runSearch = (text: string) => {
+    setQuery(text)
+    setNearbyMode(false)
+    setFocused(false)
+    Keyboard.dismiss()
+    addSearch(text)
+    if (debounce.current) clearTimeout(debounce.current)
+    setLoading(true)
+    setError(null)
+    searchRestaurants(text, filters)
+      .then(setResults)
+      .catch((e) => {
+        setError(errorMessage(e))
+        setResults([])
+      })
+      .finally(() => setLoading(false))
+  }
 
   const loadNearby = async (f: BrowseFilters) => {
     setLoading(true)
@@ -124,6 +152,10 @@ export default function SearchScreen() {
           <TextInput
             value={query}
             onChangeText={onChange}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            onSubmitEditing={() => addSearch(query)}
+            returnKeyType="search"
             placeholder="Search places or a postcode"
             placeholderTextColor={c.placeholder}
             autoCapitalize="none"
@@ -133,7 +165,34 @@ export default function SearchScreen() {
         </View>
       </View>
       <FilterChips filters={filters} onChange={onFiltersChange} />
-      {error ? (
+      {showHistory ? (
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingTop: 12, paddingBottom: 24 }}
+        >
+          <View style={styles.sectionRow}>
+            <Text style={[styles.section, { color: c.placeholder }]}>RECENT SEARCHES</Text>
+            <Pressable onPress={clearHistory} hitSlop={8}>
+              <Text style={[styles.sort, { color: c.primary }]}>Clear all</Text>
+            </Pressable>
+          </View>
+          {history.map((item) => (
+            <Pressable
+              key={item}
+              onPress={() => runSearch(item)}
+              style={({ pressed }) => [styles.recentRow, { opacity: pressed ? 0.6 : 1 }]}
+            >
+              <Ionicons name="time-outline" size={19} color={c.subtext} />
+              <Text style={[styles.recentText, { color: c.text }]} numberOfLines={1}>
+                {item}
+              </Text>
+              <Pressable onPress={() => removeSearch(item)} hitSlop={12}>
+                <Ionicons name="close" size={18} color={c.placeholder} />
+              </Pressable>
+            </Pressable>
+          ))}
+        </ScrollView>
+      ) : error ? (
         <View style={styles.errorBox}>
           <Text style={[styles.errorTitle, { color: c.text }]}>Couldn't load results</Text>
           <Text style={[styles.errorDetail, { color: c.subtext }]}>{error}</Text>
@@ -172,7 +231,14 @@ export default function SearchScreen() {
             </View>
           }
           renderItem={({ item }) => (
-            <RestaurantRow item={item} onPress={() => router.push(`/restaurant/${item.id}`)} />
+            <RestaurantRow
+              item={item}
+              onPress={() => {
+                // Opening a result confirms the search was useful — remember it.
+                if (!nearbyMode) addSearch(query)
+                router.push(`/restaurant/${item.id}`)
+              }}
+            />
           )}
         />
       )}
@@ -206,6 +272,14 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
   },
   sort: { fontSize: 12.5, fontFamily: fonts.bodyMedium },
+  recentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  recentText: { flex: 1, fontSize: 16, fontFamily: fonts.body },
   empty: { alignItems: 'center', marginTop: 48, paddingHorizontal: 40 },
   emptyTitle: { fontSize: 24, fontFamily: fonts.display800 },
   emptyBody: {

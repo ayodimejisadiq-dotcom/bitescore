@@ -10,7 +10,12 @@ import {
   ScrollView,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
-import { PACKAGE_TYPE, PRODUCT_CATEGORY, type PurchasesPackage } from 'react-native-purchases'
+import {
+  PACKAGE_TYPE,
+  PRODUCT_CATEGORY,
+  PURCHASES_ERROR_CODE,
+  type PurchasesPackage,
+} from 'react-native-purchases'
 import { useTheme } from '@/theme/useTheme'
 import { fonts } from '@/theme/type'
 import {
@@ -66,6 +71,39 @@ const FEATURES: { title: string; body: string }[] = [
     body: "Read and leave real reviews from people who've actually eaten there.",
   },
 ]
+
+// RevenueCat's errors are written for developers. Store/dashboard setup
+// failures (e.g. "None of the products registered in the RevenueCat dashboard
+// could be fetched from App Store Connect") are not something a customer can
+// act on, so they get a plain message; the raw error still goes to the log.
+// Everything else (payment pending, purchase not allowed, …) is already
+// user-readable and passes through unchanged.
+const SETUP_ERROR_CODES = new Set<string>([
+  PURCHASES_ERROR_CODE.CONFIGURATION_ERROR,
+  PURCHASES_ERROR_CODE.INVALID_CREDENTIALS_ERROR,
+  PURCHASES_ERROR_CODE.INVALID_APPLE_SUBSCRIPTION_KEY_ERROR,
+  PURCHASES_ERROR_CODE.PRODUCT_NOT_AVAILABLE_FOR_PURCHASE_ERROR,
+  PURCHASES_ERROR_CODE.UNEXPECTED_BACKEND_RESPONSE_ERROR,
+  PURCHASES_ERROR_CODE.UNKNOWN_BACKEND_ERROR,
+])
+const CONNECTION_ERROR_CODES = new Set<string>([
+  PURCHASES_ERROR_CODE.NETWORK_ERROR,
+  PURCHASES_ERROR_CODE.OFFLINE_CONNECTION_ERROR,
+  PURCHASES_ERROR_CODE.PRODUCT_REQUEST_TIMED_OUT_ERROR,
+])
+const PLANS_UNAVAILABLE = 'Plans aren’t available right now. Please try again in a little while.'
+
+function purchaseErrorMessage(e: unknown): string {
+  console.warn('[bitescore] RevenueCat error', e)
+  const code = (e as { code?: unknown } | null)?.code
+  if (typeof code === 'string') {
+    if (SETUP_ERROR_CODES.has(code)) return PLANS_UNAVAILABLE
+    if (CONNECTION_ERROR_CODES.has(code)) {
+      return 'Couldn’t reach the App Store. Check your connection and try again.'
+    }
+  }
+  return errorMessage(e)
+}
 
 function priceLine(pkg: PurchasesPackage): string {
   const price = pkg.product.priceString
@@ -127,13 +165,14 @@ export function PaywallGate({
         (a, b) => (DISPLAY_ORDER[a.packageType] ?? 9) - (DISPLAY_ORDER[b.packageType] ?? 9),
       )
       if (pkgs.length === 0) {
-        setLoadError('Plans aren’t available right now. Check your connection and try again.')
+        // An empty offering is a dashboard problem, not a connection one.
+        setLoadError(PLANS_UNAVAILABLE)
         return
       }
       setPackages(pkgs)
       setSelected((prev) => prev ?? pkgs[0].identifier)
     } catch (e) {
-      setLoadError(errorMessage(e))
+      setLoadError(purchaseErrorMessage(e))
     }
   }, [])
 
@@ -150,7 +189,7 @@ export function PaywallGate({
       if (await purchasePackage(selectedPkg)) onUnlocked()
     } catch (e) {
       if (!(e as { userCancelled?: boolean }).userCancelled) {
-        Alert.alert('Purchase failed', errorMessage(e))
+        Alert.alert('Purchase failed', purchaseErrorMessage(e))
       }
     } finally {
       setBuying(false)
@@ -174,7 +213,7 @@ export function PaywallGate({
         Alert.alert('Nothing to restore', 'No previous purchase was found for this Apple ID.')
       }
     } catch (e) {
-      Alert.alert('Restore failed', errorMessage(e))
+      Alert.alert('Restore failed', purchaseErrorMessage(e))
     } finally {
       setRestoring(false)
     }

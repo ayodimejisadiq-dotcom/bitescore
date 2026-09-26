@@ -28,7 +28,7 @@ Everything reads from env vars. Create these and fill in the `.env` files:
 3. **Google Cloud** — enable Places API, create an API key (restrict to Places),
    enable billing.
 4. **RevenueCat** — create app, add products: `annual` (auto-renewing sub,
-   £4.99/yr) and `lifetime` (non-consumable, £49.99). Copy API keys + set the
+   £9.99/yr) and `lifetime` (non-consumable, £19.99). Copy API keys + set the
    webhook to `https://<server>/api/revenuecat/webhook`.
 5. **Apple Developer + Google Play Console** — bundle IDs, the two IAP products,
    EAS build credentials.

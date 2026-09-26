@@ -319,12 +319,17 @@ export function PaywallGate({
           </View>
         ) : (
           <View style={styles.plans}>
-            {packages!.map((pkg, i) => {
+            {packages!.map((pkg) => {
               const active = pkg.identifier === selected
               const trial = freeTrialLabel(pkg)
-              // The first plan (yearly) carries the badge; a free trial
-              // outranks the generic label wherever it exists.
-              const badge = trial ?? (i === 0 && packages!.length > 1 ? 'Best value' : null)
+              // Lifetime carries "Best value" (at £19.99 once vs £9.99/yr it
+              // wins after two years); a free trial outranks it wherever one
+              // exists.
+              const badge =
+                trial ??
+                (pkg.packageType === PACKAGE_TYPE.LIFETIME && packages!.length > 1
+                  ? 'Best value'
+                  : null)
               return (
                 <Pressable
                   key={pkg.identifier}

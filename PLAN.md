@@ -23,7 +23,7 @@ notifications, and text reviews. Fully separate from the Dilagee/Shiftly product
 | Accounts | Free account (Supabase Auth: email + Apple + Google). Required for lists & notifications |
 | Lists | Multiple custom named lists per user |
 | Notifications | Push when a listed venue's FSA score changes |
-| Monetization | Hard paywall on launch. £4.99/yr or £49.99 lifetime via Apple/Google IAP (RevenueCat) |
+| Monetization | Hard paywall on launch. £9.99/yr or £19.99 lifetime via Apple/Google IAP (RevenueCat) |
 | Infrastructure | **Own** Supabase project + **own** Vercel project. No reuse of Dilagee infra |
 
 ---
@@ -92,7 +92,7 @@ RLS on every user-owned table. Reviews auto-hide after N reports pending action.
 4. **Restaurant detail** — score badge, last inspection date, address, hours, reviews, add-to-list, write-review
 5. **My Lists** — create/rename/delete multiple named lists; view saved venues
 6. **Reviews** — text-only; named or anonymous; report/flag + block user
-7. **Paywall** — hard gate on launch; £4.99/yr or £49.99 lifetime; restore purchases
+7. **Paywall** — hard gate on launch; £9.99/yr or £19.99 lifetime; restore purchases
 8. **Account / Settings** — subscription status, notification toggle, account deletion, legal
 
 ## Monetization

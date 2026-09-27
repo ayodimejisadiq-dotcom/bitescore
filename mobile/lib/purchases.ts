@@ -119,6 +119,16 @@ export async function retryIdentityAndEntitlement(userId: string): Promise<boole
   return getIsEntitled()
 }
 
+// The App Store / Play country the person is buying from, e.g. "GBR".
+// Null when the store can't say.
+export async function getStorefrontCountry(): Promise<string | null> {
+  try {
+    return (await Purchases.getStorefront())?.countryCode ?? null
+  } catch {
+    return null
+  }
+}
+
 export async function getOfferings(): Promise<PurchasesOffering | null> {
   const offerings = await Purchases.getOfferings()
   return offerings.current

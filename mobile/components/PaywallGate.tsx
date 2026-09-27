@@ -22,6 +22,7 @@ import { useTheme } from '@/theme/useTheme'
 import { fonts } from '@/theme/type'
 import {
   getOfferings,
+  getStorefrontCountry,
   purchasePackage,
   restorePurchases,
   isPurchasesConfigured,
@@ -137,11 +138,41 @@ function freeTrialLabel(pkg: PurchasesPackage): string | null {
   return `${intro.periodNumberOfUnits}-${unit} free trial`
 }
 
+// The store's own price string can carry the wrong symbol: UK testers saw
+// "$9.99" on the paywall while Apple's purchase sheet charged £9.99 (the
+// StoreKit formatter follows the device's region, not the storefront). So we
+// format the amount ourselves in the storefront's currency, falling back to
+// the store string for currencies we don't have a symbol for.
+const CURRENCY_SYMBOL: Record<string, string> = { GBP: '£', USD: '$', EUR: '€' }
+
+type PriceFormatter = (amount: number, pkg: PurchasesPackage) => string
+
+function makePriceFormatter(storefrontCountry: string | null): PriceFormatter {
+  return (amount, pkg) => {
+    const currency = storefrontCountry === 'GBR' ? 'GBP' : pkg.product.currencyCode
+    const symbol = CURRENCY_SYMBOL[currency]
+    if (!symbol) {
+      return amount === pkg.product.price
+        ? pkg.product.priceString
+        : `${amount.toFixed(2)} ${currency}`
+    }
+    return `${symbol}${amount.toFixed(2)}`
+  }
+}
+
+const MONTHS_IN_PERIOD: Partial<Record<PACKAGE_TYPE, number>> = {
+  [PACKAGE_TYPE.TWO_MONTH]: 2,
+  [PACKAGE_TYPE.THREE_MONTH]: 3,
+  [PACKAGE_TYPE.SIX_MONTH]: 6,
+  [PACKAGE_TYPE.ANNUAL]: 12,
+}
+
 // Secondary line under the plan name: the per-month equivalent for longer
 // subscriptions, or what "lifetime" means.
-function planDetail(pkg: PurchasesPackage): string {
+function planDetail(pkg: PurchasesPackage, fmt: PriceFormatter): string {
   if (pkg.packageType === PACKAGE_TYPE.LIFETIME) return 'Pay once, yours forever'
-  const perMonth = pkg.product.pricePerMonthString
+  const months = MONTHS_IN_PERIOD[pkg.packageType]
+  const perMonth = months ? fmt(pkg.product.price / months, pkg) : null
   const period = PERIOD_WORD[pkg.packageType]
   if (perMonth && pkg.packageType !== PACKAGE_TYPE.MONTHLY && pkg.packageType !== PACKAGE_TYPE.WEEKLY) {
     return `Just ${perMonth}/month, billed ${period === 'year' ? 'yearly' : `every ${period}`}`
@@ -185,6 +216,7 @@ export function PaywallGate({
   const c = useTheme()
   const insets = useSafeAreaInsets()
   const [packages, setPackages] = useState<PurchasesPackage[] | null>(null)
+  const [fmt, setFmt] = useState<PriceFormatter>(() => makePriceFormatter(null))
   const [loadError, setLoadError] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
   const [buying, setBuying] = useState(false)
@@ -203,7 +235,8 @@ export function PaywallGate({
       return
     }
     try {
-      const offering = await getOfferings()
+      const [offering, country] = await Promise.all([getOfferings(), getStorefrontCountry()])
+      setFmt(() => makePriceFormatter(country))
       const pkgs = [...(offering?.availablePackages ?? [])].sort(
         (a, b) => (DISPLAY_ORDER[a.packageType] ?? 9) - (DISPLAY_ORDER[b.packageType] ?? 9),
       )
@@ -363,12 +396,12 @@ export function PaywallGate({
                       {planName(pkg)}
                     </Text>
                     <Text style={[styles.planDetail, { color: c.mutedOnCard }]} numberOfLines={1}>
-                      {planDetail(pkg)}
+                      {planDetail(pkg, fmt)}
                     </Text>
                   </View>
                   <View style={styles.planPriceCol}>
                     <Text style={[styles.planPrice, { color: c.text }]}>
-                      {pkg.product.priceString}
+                      {fmt(pkg.product.price, pkg)}
                     </Text>
                     <Text style={[styles.planSuffix, { color: c.mutedOnCard }]}>
                       {priceSuffix(pkg)}
@@ -413,7 +446,7 @@ export function PaywallGate({
                 {selectedTrial
                   ? `${selectedTrial[0].toUpperCase()}${selectedTrial.slice(1)}, then `
                   : ''}
-                {selectedPkg.product.priceString} per {PERIOD_WORD[selectedPkg.packageType] ?? 'period'}.
+                {fmt(selectedPkg.product.price, selectedPkg)} per {PERIOD_WORD[selectedPkg.packageType] ?? 'period'}.
                 Payment is charged to your {STORE_ACCOUNT}
                 {selectedTrial ? ' when the trial ends' : ' at confirmation'} and renews
                 automatically unless cancelled at least 24 hours before the period ends. Manage or

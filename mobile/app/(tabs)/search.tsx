@@ -20,7 +20,7 @@ import { BadgeFan } from '@/components/BadgeFan'
 import { useFilters } from '@/hooks/useFilters'
 import { fetchNear, searchRestaurants } from '@/lib/data'
 import { isNumericRating } from '@/lib/fsa'
-import { errorMessage } from '@/lib/errors'
+import { searchErrorMessage } from '@/lib/errors'
 import type { BrowseFilters, RestaurantNear } from '@/lib/types'
 
 type Sort = 'closest' | 'score'
@@ -79,7 +79,7 @@ export default function SearchScreen() {
       try {
         setResults(await searchRestaurants(text, filters))
       } catch (e) {
-        setError(errorMessage(e))
+        setError(searchErrorMessage(e))
         setResults([])
       } finally {
         setLoading(false)
@@ -100,7 +100,7 @@ export default function SearchScreen() {
     searchRestaurants(q, next)
       .then(setResults)
       .catch((e) => {
-        setError(errorMessage(e))
+        setError(searchErrorMessage(e))
         setResults([])
       })
       .finally(() => setLoading(false))

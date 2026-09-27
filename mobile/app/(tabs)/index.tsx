@@ -25,7 +25,7 @@ import { useUserHeading } from '@/hooks/useUserHeading'
 import { isNumericRating, BUSINESS_TYPE_LABEL } from '@/lib/fsa'
 import { fetchPins, fetchClusters, searchRestaurants, type Bounds } from '@/lib/data'
 import { isSupabaseConfigured } from '@/lib/supabase'
-import { errorMessage } from '@/lib/errors'
+import { errorMessage, searchErrorMessage } from '@/lib/errors'
 import { RestaurantRow } from '@/components/RestaurantRow'
 import type { BrowseFilters, RestaurantCluster, RestaurantPin, RestaurantNear } from '@/lib/types'
 
@@ -374,7 +374,7 @@ export default function MapScreen() {
       try {
         setSearchResults(await searchRestaurants(text, filters, originRef.current))
       } catch (e) {
-        setSearchError(errorMessage(e))
+        setSearchError(searchErrorMessage(e))
         setSearchResults([])
       } finally {
         setSearchLoading(false)
@@ -513,7 +513,10 @@ export default function MapScreen() {
               keyboardShouldPersistTaps="handled"
               ListEmptyComponent={
                 !searchLoading ? (
-                  <Text style={[styles.noResults, { color: c.subtext }]}>No restaurants found</Text>
+                  <Text style={[styles.noResults, { color: c.subtext }]}>
+                    No places found. New places can take a few weeks to appear after the council
+                    registers them.
+                  </Text>
                 ) : null
               }
               renderItem={({ item }) => (

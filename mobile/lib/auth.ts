@@ -23,8 +23,13 @@ export async function ensureSession(): Promise<void> {
 // is handled separately below; this path is for signing back into an
 // account that already has a confirmed email, from a fresh install.
 
+// Signing in never creates an account: an unknown email should say so, not
+// quietly make a second, empty account the person then can't tell apart.
 export async function sendLoginCode(email: string): Promise<void> {
-  const { error } = await supabase.auth.signInWithOtp({ email: email.trim() })
+  const { error } = await supabase.auth.signInWithOtp({
+    email: email.trim(),
+    options: { shouldCreateUser: false },
+  })
   if (error) throw error
 }
 

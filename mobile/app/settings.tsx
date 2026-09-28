@@ -17,6 +17,7 @@ import RevenueCatUI from 'react-native-purchases-ui'
 import { useTheme } from '@/theme/useTheme'
 import { useSession } from '@/hooks/useSession'
 import { Button, GroupedCard, NavBar, Row, SectionFooter, SectionHeader } from '@/components/ui'
+import { EmailSignIn } from '@/components/EmailSignIn'
 import { confirmEmailUpgrade, deleteMyAccount, signOut, startEmailUpgrade } from '@/lib/auth'
 import { getNotificationPrefs, setNotificationPrefs } from '@/lib/data'
 import { registerForPushNotifications } from '@/lib/push'
@@ -30,6 +31,7 @@ export default function SettingsScreen() {
   const email = session?.user?.email
 
   const [notif, setNotif] = useState<boolean | null>(null)
+  const [signingIn, setSigningIn] = useState(false)
   const [notifBusy, setNotifBusy] = useState(false)
 
   useEffect(() => {
@@ -107,7 +109,13 @@ export default function SettingsScreen() {
               <Row title="Email" value={email} />
             </GroupedCard>
           ) : (
-            <EmailUpgrade />
+            <>
+              <EmailUpgrade />
+              <GroupedCard style={{ marginTop: 12 }}>
+                <Row title="Sign in to an existing account" titleColor={c.tint} onPress={() => setSigningIn(true)} />
+              </GroupedCard>
+              <SectionFooter>Use this if you already added an email on another phone or before reinstalling.</SectionFooter>
+            </>
           )}
 
           <SectionHeader style={{ paddingTop: 24 }}>Notifications</SectionHeader>
@@ -156,6 +164,11 @@ export default function SettingsScreen() {
           </GroupedCard>
         </ScrollView>
       </KeyboardAvoidingView>
+      <EmailSignIn
+        visible={signingIn}
+        onClose={() => setSigningIn(false)}
+        note="Anything you've saved on this phone without an email stays with this guest account."
+      />
     </SafeAreaView>
   )
 }

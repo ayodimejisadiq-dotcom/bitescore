@@ -31,6 +31,7 @@ import { PRIVACY_POLICY_URL, TERMS_OF_USE_URL } from '@/lib/legal'
 import { errorMessage } from '@/lib/errors'
 import { Button } from './ui'
 import { BadgeFan } from './BadgeFan'
+import { EmailSignIn } from './EmailSignIn'
 
 // Native paywall built directly on the default RevenueCat Offering, rather
 // than the dashboard-configured RevenueCatUI paywall. App Review requires
@@ -220,6 +221,7 @@ export function PaywallGate({
   const [selected, setSelected] = useState<string | null>(null)
   const [buying, setBuying] = useState(false)
   const [restoring, setRestoring] = useState(false)
+  const [signingIn, setSigningIn] = useState(false)
 
   const load = useCallback(async () => {
     setLoadError(null)
@@ -454,6 +456,12 @@ export function PaywallGate({
           </View>
         ) : null}
 
+        <Pressable onPress={() => setSigningIn(true)} hitSlop={8} style={styles.signInRow}>
+          <Text style={[styles.signInText, { color: c.label2 }]}>
+            Already have an account? <Text style={{ color: c.tint, fontWeight: '600' }}>Sign in</Text>
+          </Text>
+        </Pressable>
+
         <View style={styles.legalRow}>
           <Pressable onPress={onRestore} disabled={restoring} hitSlop={8}>
             {restoring ? (
@@ -472,6 +480,8 @@ export function PaywallGate({
           </Pressable>
         </View>
       </View>
+
+      <EmailSignIn visible={signingIn} onClose={() => setSigningIn(false)} />
     </View>
   )
 }
@@ -605,4 +615,6 @@ const styles = StyleSheet.create({
   },
   legalDot: { fontSize: 13 },
   legalLink: { fontSize: 13, fontWeight: '600' },
+  signInRow: { alignItems: 'center', marginTop: 18 },
+  signInText: { fontSize: 15 },
 })

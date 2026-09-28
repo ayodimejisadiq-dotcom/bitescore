@@ -33,6 +33,13 @@ export interface FsaEstablishment {
   RatingDate: string | null
   LocalAuthorityName: string
   geocode: { longitude: string | null; latitude: string | null } | null
+  // Inspection penalty points per area, lower is better. Absent or null for
+  // places without a numeric rating.
+  scores?: {
+    Hygiene: number | null
+    Structural: number | null
+    ConfidenceInManagement: number | null
+  } | null
 }
 
 // Shape sent to the ingest_upsert() Postgres function.
@@ -48,6 +55,11 @@ export interface RestaurantRow {
   lat: number | null
   rating_value: string
   rating_date: string | null
+  // Only sent when the FSA response carried a scores object, so an unexpected
+  // response shape can't wipe scores we already have (see ingest_upsert).
+  hygiene?: number | null
+  structural?: number | null
+  management?: number | null
 }
 
 async function fsaFetch<T>(path: string, attempt = 0): Promise<T> {
@@ -113,7 +125,17 @@ export function toRow(e: FsaEstablishment): RestaurantRow {
   const lat = num(e.geocode?.latitude ?? null)
   const lng = num(e.geocode?.longitude ?? null)
 
+  const scores =
+    e.scores === undefined
+      ? {}
+      : {
+          hygiene: e.scores?.Hygiene ?? null,
+          structural: e.scores?.Structural ?? null,
+          management: e.scores?.ConfidenceInManagement ?? null,
+        }
+
   return {
+    ...scores,
     fhrs_id: e.FHRSID,
     name: e.BusinessName,
     business_type: normalizedBusinessType(e.BusinessType, e.BusinessName),

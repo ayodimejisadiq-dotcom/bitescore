@@ -30,6 +30,7 @@ import { SaveToListModal } from '@/components/SaveToListModal'
 import { ReviewComposer } from '@/components/ReviewComposer'
 import { LogVisitSheet } from '@/components/LogVisitSheet'
 import { DinerCheckCard } from '@/components/DinerCheckCard'
+import { InspectionHistory, showsInspectionHistory } from '@/components/InspectionHistory'
 import { categoryOne } from '@/components/RestaurantRow'
 import { isNumericRating, ratingDescription, FSA_ATTRIBUTION } from '@/lib/fsa'
 import {
@@ -40,6 +41,7 @@ import {
   followingSet,
   getDinerCheck,
   getFollowedVisitors,
+  getInspectionHistory,
   getMyReview,
   getRestaurant,
   getReviews,
@@ -57,6 +59,7 @@ import { displayName, distanceLabel, joinNames, metersBetween, shortName, timeAg
 import { scheduleDirectionsFollowUp } from '@/lib/followups'
 import type {
   DinerCheckSummary,
+  Inspection,
   ListSummary,
   OpeningHours,
   PersonCard,
@@ -98,6 +101,7 @@ export default function RestaurantDetail() {
   const [visit, setVisit] = useState<{ id: string; verified: boolean; visited_at: string } | null>(null)
   const [savedIn, setSavedIn] = useState<ListSummary[]>([])
   const [showWeek, setShowWeek] = useState(false)
+  const [history, setHistory] = useState<Inspection[]>([])
 
   const [saveOpen, setSaveOpen] = useState(false)
   const [composerOpen, setComposerOpen] = useState(false)
@@ -156,6 +160,10 @@ export default function RestaurantDetail() {
 
   // Refreshes Google rating + hours in the background; the server skips the
   // Google call if its cache is still fresh, so this is cheap on every view.
+  useEffect(() => {
+    getInspectionHistory(id).then(setHistory).catch(() => setHistory([]))
+  }, [id])
+
   useEffect(() => {
     lookupPlaceData(id).then((result) => {
       if (!result) return
@@ -387,6 +395,12 @@ export default function RestaurantDetail() {
         {numeric && dinerCheck ? (
           <View style={{ marginTop: 16 }}>
             <DinerCheckCard summary={dinerCheck} inspected={monthYear(place.rating_date)} onVote={onVote} />
+          </View>
+        ) : null}
+
+        {showsInspectionHistory(history) ? (
+          <View style={{ marginTop: 16 }}>
+            <InspectionHistory history={history} />
           </View>
         ) : null}
 

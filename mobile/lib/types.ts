@@ -223,3 +223,15 @@ export interface UserReview {
   body: string
   created_at: string
 }
+
+// One inspection on a place's record, newest first (inspection_history()).
+// Sub-scores are FSA penalty points, lower is better.
+export interface Inspection {
+  rating_value: string
+  rating_date: string | null // null for early ratings we only saw change
+  hygiene: number | null
+  structural: number | null
+  management: number | null
+  seen_until: string | null
+  is_current: boolean
+}

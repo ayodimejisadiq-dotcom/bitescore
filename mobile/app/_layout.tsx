@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { View, ActivityIndicator, LogBox } from 'react-native'
+import { View, ActivityIndicator, LogBox, Linking, Alert } from 'react-native'
 import { Stack, useRouter } from 'expo-router'
 import * as Notifications from 'expo-notifications'
 import * as Updates from 'expo-updates'
@@ -11,6 +11,7 @@ import { useSession } from '@/hooks/useSession'
 import { configurePurchases, loginPurchases, getIsEntitled } from '@/lib/purchases'
 import { PaywallGate } from '@/components/PaywallGate'
 import { routeForNotification, setupFollowUpCategory } from '@/lib/followups'
+import { handleAuthRedirect } from '@/lib/authLink'
 import { useTheme } from '@/theme/useTheme'
 
 // Hold the native splash — the Bitescore logo — rather than letting it vanish
@@ -64,6 +65,20 @@ export default function RootLayout() {
     })
     return () => sub.remove()
   }, [router])
+
+  // Email sign-in / add-email links come back as bitescore://auth-callback
+  // with the session in the URL. Handled here rather than in a route because
+  // the paywall replaces the whole navigator for anyone not yet entitled —
+  // exactly the person signing back in to recover their access.
+  useEffect(() => {
+    const handle = async (url: string | null) => {
+      const result = await handleAuthRedirect(url)
+      if (result) Alert.alert('Couldn’t sign in', result)
+    }
+    Linking.getInitialURL().then(handle)
+    const sub = Linking.addEventListener('url', ({ url }) => handle(url))
+    return () => sub.remove()
+  }, [])
 
   // Check for an OTA update on every launch and reload immediately if one is
   // available, so users don't need the two-launch cycle.

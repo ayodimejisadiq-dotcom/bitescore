@@ -5,6 +5,7 @@ import {
   type BrowseFilters,
   type DinerCheckSummary,
   type FollowRow,
+  type Inspection,
   type ListAccess,
   type ListDetail,
   type ListInvite,
@@ -148,6 +149,12 @@ export async function lookupPlaceData(restaurantId: string): Promise<PlaceLookup
   } catch {
     return null
   }
+}
+
+export async function getInspectionHistory(restaurantId: string): Promise<Inspection[]> {
+  const { data, error } = await supabase.rpc('inspection_history', { p_restaurant_id: restaurantId })
+  if (error) throw error
+  return (data ?? []) as Inspection[]
 }
 
 export async function getReviews(restaurantId: string): Promise<Review[]> {

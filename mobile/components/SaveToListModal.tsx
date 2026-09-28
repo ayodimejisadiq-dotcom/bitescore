@@ -1,14 +1,31 @@
 import { useEffect, useState } from 'react'
-import { View, Text, TextInput, Pressable, Modal, FlatList, ActivityIndicator, StyleSheet } from 'react-native'
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useTheme } from '@/theme/useTheme'
-import { fonts } from '@/theme/type'
-import { EdgeButton } from './ui'
+import { GroupedCard, Mosaic } from './ui'
 import { useSession } from '@/hooks/useSession'
 import { ensureSession } from '@/lib/auth'
 import { fetchMyLists, createList, addToList, removeFromList, listIdsContaining } from '@/lib/data'
 import { registerForPushAfterSave } from '@/lib/push'
-import type { ListWithItems } from '@/lib/types'
+import type { ListSummary } from '@/lib/types'
+
+// Lists this person can put places in: their own, plus shared lists where
+// collaborators are allowed to add.
+export function canAddTo(l: ListSummary): boolean {
+  return l.my_role === 'owner' || (l.my_role === 'editor' && l.collaborators_can_add && l.access !== 'private')
+}
 
 export function SaveToListModal({
   visible,
@@ -20,8 +37,9 @@ export function SaveToListModal({
   onClose: () => void
 }) {
   const c = useTheme()
+  const insets = useSafeAreaInsets()
   const { session } = useSession()
-  const [lists, setLists] = useState<ListWithItems[]>([])
+  const [lists, setLists] = useState<ListSummary[]>([])
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [newName, setNewName] = useState('')
@@ -32,9 +50,9 @@ export function SaveToListModal({
     ;(async () => {
       setLoading(true)
       try {
-        const [myLists, contains] = await Promise.all([fetchMyLists(), listIdsContaining(restaurantId)])
-        setLists(myLists)
-        setChecked(contains)
+        const mine = (await fetchMyLists()).filter(canAddTo)
+        setLists(mine)
+        setChecked(await listIdsContaining(restaurantId, mine.map((l) => l.id)))
       } catch {
         /* leave empty; row taps will just no-op */
       } finally {
@@ -44,25 +62,25 @@ export function SaveToListModal({
   }, [visible, session, restaurantId])
 
   const toggle = async (listId: string) => {
+    const prev = checked
     const next = new Set(checked)
-    const wasChecked = next.has(listId)
-    wasChecked ? next.delete(listId) : next.add(listId)
-    setChecked(next) // optimistic
+    const was = next.has(listId)
+    was ? next.delete(listId) : next.add(listId)
+    setChecked(next)
     try {
-      if (wasChecked) {
+      if (was) {
         await removeFromList(listId, restaurantId)
       } else {
         await addToList(listId, restaurantId)
-        // Saving a place is what score-change alerts are for, so this is
-        // where we ask for permission. Not awaited: the save is already done.
+        // Saving is when score-change alerts make sense, so ask here.
         void registerForPushAfterSave()
       }
     } catch {
-      setChecked(checked) // revert on failure
+      setChecked(prev)
     }
   }
 
-  const onCreateAndAdd = async () => {
+  const onCreate = async () => {
     if (!newName.trim()) return
     setCreating(true)
     try {
@@ -70,119 +88,111 @@ export function SaveToListModal({
       await addToList(id, restaurantId)
       void registerForPushAfterSave()
       setNewName('')
-      const myLists = await fetchMyLists()
-      setLists(myLists)
-      setChecked((prev) => new Set(prev).add(id))
+      setLists((await fetchMyLists()).filter(canAddTo))
+      setChecked((p) => new Set(p).add(id))
     } catch {
-      /* leave input as-is so the user can retry */
+      /* keep the name so they can retry */
     } finally {
       setCreating(false)
     }
   }
 
-  if (!session) {
-    // Normally unreachable — the app signs in anonymously at launch. Only
-    // shows if that failed (e.g. no network on first open).
-    return (
-      <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-        <Pressable style={styles.backdrop} onPress={onClose}>
-          <View style={[styles.card, { backgroundColor: c.card }]}>
-            <Text style={[styles.title, { color: c.text }]}>Couldn’t connect</Text>
-            <Text style={[styles.p, { color: c.mutedOnCard }]}>Check your connection and try again.</Text>
-            <EdgeButton
-              color={c.primary}
-              edgeColor={c.primaryDark}
-              radius={16}
-              onPress={() => ensureSession()}
-              style={styles.primaryBtn}
-            >
-              <Text style={styles.primaryBtnText}>Retry</Text>
-            </EdgeButton>
-          </View>
-        </Pressable>
-      </Modal>
-    )
-  }
-
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={[styles.card, { backgroundColor: c.card }]} onPress={() => {}}>
-          <Text style={[styles.title, { color: c.text }]}>Save to a list</Text>
-          {loading ? (
-            <ActivityIndicator color={c.primary} style={{ marginVertical: 20 }} />
-          ) : (
-            <FlatList
-              data={lists}
-              keyExtractor={(l) => l.id}
-              style={{ maxHeight: 260 }}
-              ListEmptyComponent={
-                <Text style={[styles.p, { color: c.mutedOnCard, marginVertical: 12 }]}>
-                  No lists yet — create one below.
-                </Text>
-              }
-              renderItem={({ item }) => (
-                <Pressable style={styles.row} onPress={() => toggle(item.id)}>
-                  <Text style={[styles.rowLabel, { color: c.text }]}>{item.name}</Text>
-                  <Ionicons
-                    name={checked.has(item.id) ? 'checkmark-circle' : 'ellipse-outline'}
-                    size={22}
-                    color={checked.has(item.id) ? c.primary : c.border}
-                  />
-                </Pressable>
-              )}
-            />
-          )}
-
-          <View style={styles.newRow}>
-            <TextInput
-              value={newName}
-              onChangeText={setNewName}
-              placeholder="New list name"
-              placeholderTextColor={c.disabled}
-              style={[styles.input, { backgroundColor: c.bg, color: c.text, borderColor: c.border }]}
-              onSubmitEditing={onCreateAndAdd}
-            />
-            <Pressable onPress={onCreateAndAdd} disabled={creating || !newName.trim()} hitSlop={8}>
-              {creating ? (
-                <ActivityIndicator color={c.primary} />
-              ) : (
-                <Ionicons name="add-circle" size={30} color={c.primary} />
-              )}
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={styles.backdrop} onPress={onClose} />
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
+          <View style={styles.grabber} />
+          <View style={styles.head}>
+            <Text style={[styles.title, { color: c.label }]}>Save to a list</Text>
+            <Pressable onPress={onClose} hitSlop={10}>
+              <Text style={[styles.done, { color: c.tint }]}>Done</Text>
             </Pressable>
           </View>
 
-          <Pressable onPress={onClose} style={styles.doneBtn}>
-            <Text style={{ color: c.primary, fontSize: 16, fontFamily: fonts.display600 }}>Done</Text>
-          </Pressable>
-        </Pressable>
-      </Pressable>
+          {!session ? (
+            <Pressable onPress={() => ensureSession()} style={{ padding: 24 }}>
+              <Text style={{ color: c.tint, fontSize: 16, textAlign: 'center' }}>Couldn’t connect. Tap to retry.</Text>
+            </Pressable>
+          ) : loading ? (
+            <ActivityIndicator color={c.meta} style={{ marginVertical: 28 }} />
+          ) : (
+            <ScrollView style={{ maxHeight: 360 }} keyboardShouldPersistTaps="handled">
+              {lists.length ? (
+                <GroupedCard inset={78}>
+                  {lists.map((l) => (
+                    <Pressable key={l.id} style={styles.row} onPress={() => toggle(l.id)}>
+                      <Mosaic ratings={l.mosaic} size={48} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.rowTitle, { color: c.label }]} numberOfLines={1}>
+                          {l.name}
+                        </Text>
+                        <Text style={[styles.rowSub, { color: c.meta }]}>
+                          {l.place_count} place{l.place_count === 1 ? '' : 's'}
+                          {l.my_role !== 'owner' ? ' · Shared with you' : ''}
+                        </Text>
+                      </View>
+                      <Ionicons
+                        name={checked.has(l.id) ? 'checkmark-circle' : 'ellipse-outline'}
+                        size={24}
+                        color={checked.has(l.id) ? c.tint : c.chevron}
+                      />
+                    </Pressable>
+                  ))}
+                </GroupedCard>
+              ) : null}
+              <View style={[styles.newRow, { marginTop: lists.length ? 12 : 0 }]}>
+                <TextInput
+                  value={newName}
+                  onChangeText={setNewName}
+                  placeholder="New list"
+                  placeholderTextColor={c.meta}
+                  style={[styles.input, { color: c.label }]}
+                  onSubmitEditing={onCreate}
+                  returnKeyType="done"
+                />
+                <Pressable onPress={onCreate} disabled={creating || !newName.trim()} hitSlop={8}>
+                  {creating ? (
+                    <ActivityIndicator color={c.tint} />
+                  ) : (
+                    <Ionicons name="add-circle" size={30} color={newName.trim() ? c.tint : c.chevron} />
+                  )}
+                </Pressable>
+              </View>
+            </ScrollView>
+          )}
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   )
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(23,23,15,0.36)', alignItems: 'center', justifyContent: 'center' },
-  card: { width: '85%', borderRadius: 24, padding: 20 },
-  title: { fontSize: 21, fontFamily: fonts.display800, marginBottom: 6 },
-  p: { fontSize: 14, fontFamily: fonts.body, lineHeight: 20 },
-  row: {
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
+  sheet: { backgroundColor: '#F2F2F7', borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingTop: 8 },
+  grabber: { width: 36, height: 5, borderRadius: 3, backgroundColor: '#C7C7CC', alignSelf: 'center', marginBottom: 6 },
+  head: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 20,
     paddingVertical: 12,
   },
-  rowLabel: { fontSize: 15, fontFamily: fonts.bodyMedium },
-  newRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8 },
-  input: {
-    flex: 1,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 15,
+  title: { fontSize: 20, fontWeight: '700', letterSpacing: -0.3 },
+  done: { fontSize: 17, fontWeight: '600' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 10 },
+  rowTitle: { fontSize: 17, fontWeight: '600' },
+  rowSub: { fontSize: 14, marginTop: 2 },
+  newRow: {
+    marginHorizontal: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingLeft: 16,
+    paddingRight: 12,
+    height: 52,
   },
-  primaryBtn: { marginTop: 14, paddingVertical: 13, borderRadius: 16, alignItems: 'center' },
-  primaryBtnText: { color: '#fff', fontFamily: fonts.display600, fontSize: 16 },
-  doneBtn: { alignItems: 'center', marginTop: 14, paddingVertical: 4 },
+  input: { flex: 1, fontSize: 17 },
 })

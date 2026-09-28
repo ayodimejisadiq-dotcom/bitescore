@@ -69,12 +69,15 @@ export interface OpeningHours {
 export interface Review {
   id: string
   restaurant_id: string
-  user_id: string
+  user_id: string | null // null on others' anonymous reviews
   display_name_snapshot: string | null
   is_anonymous: boolean
   body: string
   status: 'visible' | 'hidden'
   created_at: string
+  // From restaurant_reviews(); null on anonymous reviews.
+  username?: string | null
+  public_name?: string | null
 }
 
 export type RatingValue = 0 | 1 | 2 | 3 | 4 | 5 | 'awaiting'
@@ -103,9 +106,120 @@ export interface ListItemRestaurant {
   postcode: string | null
 }
 
-export interface ListWithItems {
+export type ListAccess = 'private' | 'invited' | 'link'
+export type ListRole = 'owner' | 'editor' | 'viewer' | 'link'
+
+export interface PersonCard {
+  user_id: string
+  username: string | null
+  public_name: string | null
+}
+
+export interface ListPerson extends PersonCard {
+  role: 'owner' | 'editor' | 'viewer'
+}
+
+// A row on the Lists tab, from my_lists().
+export interface ListSummary {
   id: string
   name: string
   created_at: string
-  items: ListItemRestaurant[]
+  owner_id: string
+  access: ListAccess
+  share_slug: string | null
+  collaborators_can_add: boolean
+  my_role: 'owner' | 'editor' | 'viewer'
+  place_count: number
+  mosaic: string[]
+  people: ListPerson[]
+}
+
+export interface ListItemDetail extends ListItemRestaurant {
+  lng: number | null
+  lat: number | null
+  added_by: string | null
+  added_at: string
+}
+
+export interface ListDetail {
+  id: string
+  name: string
+  owner_id: string
+  access: ListAccess
+  share_slug: string | null
+  collaborators_can_add: boolean
+  my_role: ListRole
+  can_add: boolean
+  people: ListPerson[]
+  items: ListItemDetail[]
+}
+
+export interface ListInvite {
+  id: string
+  name: string
+  access: ListAccess
+  owner_id: string
+  collaborators_can_add: boolean
+  my_role: ListRole | null
+  place_count: number
+  people_count: number
+  owner: PersonCard | null
+  mosaic: string[]
+  preview: { id: string; name: string; rating_value: string }[]
+}
+
+export type Verdict = 'match' | 'cleaner'
+
+export interface DinerCheckSummary {
+  total: number
+  cleaner: number | null // null until the place has enough votes to show
+  match: number | null
+  min_public: number
+  my_verdict: Verdict | null
+  can_vote: boolean
+  my_visit_today: { verified: boolean; visited_at: string; method: string } | null
+}
+
+export interface ProfileSummary extends PersonCard {
+  city: string | null
+  is_me: boolean
+  followers: number
+  following: number
+  i_follow: boolean
+  follows_me: boolean
+  reviews: number
+  verified_visits: number
+  independent_pct: number | null
+  avg_score: number | null
+  authorities: number
+  chain_visits: number
+}
+
+export interface FollowRow extends PersonCard {
+  i_follow: boolean
+  follows_me: boolean
+}
+
+export interface TasteMatch {
+  shared: number
+  compared: number
+  agreed: number
+  places: { id: string; name: string; rating_value: string; mine: Verdict | null; theirs: Verdict | null }[]
+}
+
+export interface PublicList {
+  id: string
+  name: string
+  share_slug: string | null
+  place_count: number
+  mosaic: string[]
+}
+
+export interface UserReview {
+  id: string
+  restaurant_id: string
+  restaurant_name: string
+  rating_value: string
+  body: string
+  created_at: string
 }

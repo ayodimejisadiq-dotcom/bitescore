@@ -3,7 +3,7 @@
     "name": "Bitescore",
     "slug": "bitescore",
     "scheme": "bitescore",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -16,7 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.bitescore.app",
-      "buildNumber": "21",
+      "buildNumber": "23",
       "config": {
         "usesNonExemptEncryption": false
       },

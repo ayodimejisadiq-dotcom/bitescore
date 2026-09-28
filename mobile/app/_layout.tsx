@@ -5,18 +5,12 @@ import * as Notifications from 'expo-notifications'
 import * as Updates from 'expo-updates'
 import * as SplashScreen from 'expo-splash-screen'
 import { StatusBar } from 'expo-status-bar'
-import { useFonts } from 'expo-font'
-import {
-  BricolageGrotesque_600SemiBold,
-  BricolageGrotesque_800ExtraBold,
-} from '@expo-google-fonts/bricolage-grotesque'
-import { DMSans_400Regular, DMSans_500Medium, DMSans_700Bold } from '@expo-google-fonts/dm-sans'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { ensureSession } from '@/lib/auth'
 import { useSession } from '@/hooks/useSession'
 import { configurePurchases, loginPurchases, getIsEntitled } from '@/lib/purchases'
 import { PaywallGate } from '@/components/PaywallGate'
-import { restaurantIdFromNotificationResponse } from '@/lib/push'
+import { routeForNotification, setupFollowUpCategory } from '@/lib/followups'
 import { useTheme } from '@/theme/useTheme'
 
 // Hold the native splash — the Bitescore logo — rather than letting it vanish
@@ -28,6 +22,16 @@ SplashScreen.preventAutoHideAsync().catch(() => {})
 // is slow to start. Startup work usually finishes well inside this, so in
 // practice this is the splash duration rather than a floor under a longer wait.
 const MIN_SPLASH_MS = 2000
+
+// Show our own local reminders (and pushes) even while the app is open.
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: false,
+    shouldSetBadge: false,
+  }),
+})
 
 if (__DEV__) {
   // Supabase's own background token-refresh timer (runs every ~30s for the
@@ -44,25 +48,19 @@ export default function RootLayout() {
   const [entitled, setEntitled] = useState<boolean | null>(null)
   const [identityFailed, setIdentityFailed] = useState(false)
   const router = useRouter()
-  const [fontsLoaded] = useFonts({
-    BricolageGrotesque_600SemiBold,
-    BricolageGrotesque_800ExtraBold,
-    DMSans_400Regular,
-    DMSans_500Medium,
-    DMSans_700Bold,
-  })
 
-  // Deep-links a tapped score-change notification straight to that
-  // restaurant's detail page — covers both the app already running
-  // (foreground/background tap) and a cold start launched by the tap.
+  // Deep-links a tapped notification: a score-change push opens the place, a
+  // "Did you visit …?" reminder opens "How was it?". Covers both the app
+  // already running and a cold start launched by the tap.
   useEffect(() => {
+    setupFollowUpCategory()
     Notifications.getLastNotificationResponseAsync().then((response) => {
-      const restaurantId = response && restaurantIdFromNotificationResponse(response)
-      if (restaurantId) router.push(`/restaurant/${restaurantId}`)
+      const route = response && routeForNotification(response)
+      if (route) router.push(route)
     })
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      const restaurantId = restaurantIdFromNotificationResponse(response)
-      if (restaurantId) router.push(`/restaurant/${restaurantId}`)
+      const route = routeForNotification(response)
+      if (route) router.push(route)
     })
     return () => sub.remove()
   }, [router])
@@ -114,7 +112,7 @@ export default function RootLayout() {
     return () => clearTimeout(t)
   }, [])
 
-  const stillChecking = !fontsLoaded || sessionLoading || (session && entitled === null)
+  const stillChecking = sessionLoading || (session && entitled === null)
 
   // Drop the splash only once the minimum has elapsed *and* there is something
   // real behind it — otherwise it would hand over to the spinner, which is a
@@ -126,10 +124,10 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <StatusBar style="auto" />
+      <StatusBar style="dark" />
       {stillChecking ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: c.bg }}>
-          <ActivityIndicator color={c.primary} />
+          <ActivityIndicator color={c.tint} />
         </View>
       ) : entitled === false ? (
         <PaywallGate
@@ -138,9 +136,16 @@ export default function RootLayout() {
           onUnlocked={() => setEntitled(true)}
         />
       ) : (
-        <Stack screenOptions={{ headerShown: false }}>
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.bg } }}>
           <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="restaurant/[id]" options={{ presentation: 'card' }} />
+          <Stack.Screen name="restaurant/[id]" />
+          <Stack.Screen name="list/[id]" />
+          <Stack.Screen name="user/[id]" />
+          <Stack.Screen name="follows/[id]" />
+          <Stack.Screen name="settings" />
+          <Stack.Screen name="edit-profile" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="visit/[id]" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="l/[slug]" options={{ presentation: 'modal' }} />
         </Stack>
       )}
     </GestureHandlerRootView>

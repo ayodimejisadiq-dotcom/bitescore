@@ -1,40 +1,19 @@
 import { View, Text, StyleSheet } from 'react-native'
-import { scoreFill, scoreEdge } from '@/theme/colors'
-import { fonts } from '@/theme/type'
-import { tileEdge } from './ui'
+import { scoreFill } from '@/theme/colors'
 
-// Empty-state illustration built from three real score tiles — a fanned
-// 4 / 5 / 3 — so no image asset is needed.
+// Illustration built from three real score tiles — a fanned 4 / 5 / 3 — so no
+// image asset is needed. Used in the paywall hero.
 export function BadgeFan() {
   return (
     <View style={styles.fan}>
-      <View
-        style={[
-          styles.tile,
-          { backgroundColor: scoreFill['4'], transform: [{ rotate: '-11deg' }] },
-          tileEdge(scoreEdge['4'], 4),
-        ]}
-      >
+      <View style={[styles.tile, { backgroundColor: scoreFill['4'], transform: [{ rotate: '-11deg' }] }]}>
         <Text style={styles.num}>4</Text>
       </View>
-      <View
-        style={[
-          styles.tile,
-          styles.tileCenter,
-          { backgroundColor: scoreFill['5'] },
-          tileEdge(scoreEdge['5'], 4),
-        ]}
-      >
+      <View style={[styles.tile, styles.tileCenter, { backgroundColor: scoreFill['5'] }]}>
         <Text style={styles.num}>5</Text>
       </View>
-      <View
-        style={[
-          styles.tile,
-          { backgroundColor: scoreFill['3'], transform: [{ rotate: '10deg' }] },
-          tileEdge(scoreEdge['3'], 4),
-        ]}
-      >
-        <Text style={styles.num}>3</Text>
+      <View style={[styles.tile, { backgroundColor: scoreFill['3'], transform: [{ rotate: '10deg' }] }]}>
+        <Text style={[styles.num, { color: '#1C1C1E' }]}>3</Text>
       </View>
     </View>
   )
@@ -55,7 +34,8 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    boxShadow: '0 6px 14px rgba(0,0,0,0.15)',
   },
   tileCenter: { width: 46, height: 58, marginBottom: 10, zIndex: 1 },
-  num: { color: '#fff', fontFamily: fonts.display800, fontSize: 24 },
+  num: { color: '#fff', fontWeight: '700', fontSize: 24 },
 })

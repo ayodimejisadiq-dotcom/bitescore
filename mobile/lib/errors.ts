@@ -9,3 +9,11 @@ export function errorMessage(e: unknown): string {
   }
   return String(e)
 }
+
+// Search failures are shown under the search bar, so keep database wording
+// ("canceling statement due to statement timeout") out of them. The real
+// error still goes to the log.
+export function searchErrorMessage(e: unknown): string {
+  console.warn('[bitescore] search failed', e)
+  return 'Search didn’t finish. Check your connection and try again.'
+}

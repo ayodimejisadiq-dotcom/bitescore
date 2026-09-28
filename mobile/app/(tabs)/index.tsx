@@ -16,17 +16,16 @@ import * as Location from 'expo-location'
 import { useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '@/theme/useTheme'
-import { fonts } from '@/theme/type'
-import { colorForRating, edgeForRating, NEUTRAL_RATING } from '@/theme/colors'
-import { tileEdge } from '@/components/ui'
+import { colorForRating, textOnRating, NEUTRAL_RATING } from '@/theme/colors'
+import { ScoreBadge } from '@/components/ScoreBadge'
 import { FilterChips } from '@/components/FilterChips'
 import { useFilters } from '@/hooks/useFilters'
 import { useUserHeading } from '@/hooks/useUserHeading'
-import { isNumericRating, BUSINESS_TYPE_LABEL } from '@/lib/fsa'
+import { isNumericRating } from '@/lib/fsa'
 import { fetchPins, fetchClusters, searchRestaurants, type Bounds } from '@/lib/data'
 import { isSupabaseConfigured } from '@/lib/supabase'
-import { errorMessage } from '@/lib/errors'
-import { RestaurantRow } from '@/components/RestaurantRow'
+import { errorMessage, searchErrorMessage } from '@/lib/errors'
+import { RestaurantRow, categoryOne } from '@/components/RestaurantRow'
 import type { BrowseFilters, RestaurantCluster, RestaurantPin, RestaurantNear } from '@/lib/types'
 
 // Central London as a sensible default until we have the user's location.
@@ -64,10 +63,10 @@ const NEXT_MODE: Record<LocateMode, LocateMode> = {
   heading: 'free',
 }
 
-const MODE_ICON: Record<LocateMode, 'locate-outline' | 'locate' | 'navigate'> = {
-  free: 'locate-outline',
-  follow: 'locate',
-  heading: 'navigate',
+const MODE_ICON: Record<LocateMode, 'navigate-outline' | 'navigate' | 'compass'> = {
+  free: 'navigate-outline',
+  follow: 'navigate',
+  heading: 'compass',
 }
 
 // Compass readings arrive many times a second and each one is a camera
@@ -76,32 +75,14 @@ const MODE_ICON: Record<LocateMode, 'locate-outline' | 'locate' | 'navigate'> = 
 const CAMERA_MIN_DEGREES = 2
 const CAMERA_MIN_INTERVAL_MS = 220
 
-// Score pin: rounded tile with a rotated-square pointer tail; 5s carry the
-// gold ring so the best places pop in a cluster.
+// Score pin: 34px rounded tile in the score colour with a white border.
 function ScorePin({ pin }: { pin: RestaurantPin }) {
-  const fill = colorForRating(pin.rating_value)
   const numeric = isNumericRating(pin.rating_value)
-  const isFive = pin.rating_value === '5'
-  const size = isFive ? 38 : 34
   return (
-    <View style={styles.pinWrap}>
-      <View
-        style={[
-          styles.pinTile,
-          {
-            backgroundColor: fill,
-            width: size,
-            height: size,
-            borderRadius: size * 0.35,
-          },
-          isFive ? { borderWidth: 2.5, borderColor: '#F1C34A' } : null,
-        ]}
-      >
-        <Text style={[styles.pinText, { fontSize: size * 0.5 }]}>
-          {numeric ? pin.rating_value : '–'}
-        </Text>
-      </View>
-      <View style={[styles.pinTail, { backgroundColor: isFive ? '#F1C34A' : fill }]} />
+    <View style={[styles.pin, { backgroundColor: colorForRating(pin.rating_value) }]}>
+      <Text style={[styles.pinText, { color: textOnRating(pin.rating_value) }]}>
+        {numeric ? pin.rating_value : '–'}
+      </Text>
     </View>
   )
 }
@@ -126,7 +107,7 @@ const ScoreMarker = memo(
           e.stopPropagation()
           onSelect(pin)
         }}
-        anchor={{ x: 0.5, y: 1 }}
+        anchor={{ x: 0.5, y: 0.5 }}
         // The important one. react-native-maps defaults this to true, which
         // re-rasterises every custom marker view continuously, for every
         // marker, forever. With a screenful of pins that is enough native work
@@ -155,7 +136,6 @@ const ClusterMarker = memo(
   }) {
     const size = cluster.n >= 1000 ? 60 : cluster.n >= 250 ? 52 : cluster.n >= 50 ? 46 : 40
     const fill = cluster.best_rating ? colorForRating(cluster.best_rating) : NEUTRAL_RATING
-    const edge = cluster.best_rating ? edgeForRating(cluster.best_rating) : '#9A947F'
     const label = cluster.n >= 1000 ? `${Math.round(cluster.n / 100) / 10}k` : String(cluster.n)
     return (
       <Marker
@@ -170,10 +150,16 @@ const ClusterMarker = memo(
           style={[
             styles.cluster,
             { backgroundColor: fill, width: size, height: size, borderRadius: size / 2 },
-            tileEdge(edge, 3),
           ]}
         >
-          <Text style={[styles.clusterText, { fontSize: size * 0.32 }]}>{label}</Text>
+          <Text
+            style={[
+              styles.clusterText,
+              { fontSize: size * 0.32, color: cluster.best_rating ? textOnRating(cluster.best_rating) : '#fff' },
+            ]}
+          >
+            {label}
+          </Text>
         </View>
       </Marker>
     )
@@ -374,7 +360,7 @@ export default function MapScreen() {
       try {
         setSearchResults(await searchRestaurants(text, filters, originRef.current))
       } catch (e) {
-        setSearchError(errorMessage(e))
+        setSearchError(searchErrorMessage(e))
         setSearchResults([])
       } finally {
         setSearchLoading(false)
@@ -448,9 +434,8 @@ export default function MapScreen() {
     load(regionRef.current, next)
   }
 
-  const selectedCategory = selected
-    ? (BUSINESS_TYPE_LABEL[selected.business_type] ?? selected.business_type)
-    : null
+  // The tab bar floats over the map; controls sit just above it.
+  const bottomInset = 50 + insets.bottom + 16
 
   return (
     <View style={styles.root}>
@@ -459,6 +444,7 @@ export default function MapScreen() {
         style={StyleSheet.absoluteFill}
         initialRegion={DEFAULT_REGION}
         showsUserLocation
+        showsMyLocationButton={false}
         onRegionChangeComplete={onRegionChangeComplete}
         onPress={() => setSelected(null)}
       >
@@ -476,73 +462,82 @@ export default function MapScreen() {
       </MapView>
 
       <SafeAreaView edges={['top']} style={styles.overlay} pointerEvents="box-none">
-        <View style={[styles.search, { backgroundColor: c.card, borderColor: c.controlBorder }]}>
-          <Ionicons name="search" size={19} color={c.primary} />
+        <View style={styles.search}>
+          <Ionicons name="search" size={19} color={c.meta} />
           <TextInput
             value={searchQuery}
             onChangeText={onSearchChange}
-            placeholder="Search restaurants"
-            placeholderTextColor={c.placeholder}
+            placeholder="Restaurant, street or postcode"
+            placeholderTextColor={c.meta}
             autoCapitalize="none"
             autoCorrect={false}
             returnKeyType="search"
-            style={[styles.searchInput, { color: c.text }]}
+            style={[styles.searchInput, { color: c.label }]}
           />
           {searchLoading ? (
-            <ActivityIndicator size="small" color={c.primary} />
+            <ActivityIndicator size="small" color={c.meta} />
           ) : searchQuery ? (
             <Pressable
-              onPress={() => { setSearchQuery(''); setSearchResults([]) }}
+              onPress={() => {
+                setSearchQuery('')
+                setSearchResults([])
+              }}
               hitSlop={8}
+              accessibilityLabel="Clear search"
             >
-              <Ionicons name="close-circle" size={18} color={c.placeholder} />
+              <Ionicons name="close-circle" size={18} color={c.chevron} />
             </Pressable>
           ) : null}
         </View>
         <FilterChips filters={filters} onChange={onFilters} />
         {searchQuery ? (
           searchError ? (
-            <View style={[styles.errorBanner, { backgroundColor: c.card, borderColor: c.controlBorder }]}>
-              <Text style={[styles.errorText, { color: c.subtext }]}>{searchError}</Text>
+            <View style={styles.banner}>
+              <Text style={[styles.bannerBody, { color: c.label2 }]}>{searchError}</Text>
             </View>
           ) : (
-            <FlatList
-              data={searchResults}
-              keyExtractor={(item) => item.id}
-              style={[styles.resultsList, { backgroundColor: c.card, borderColor: c.controlBorder }]}
-              keyboardShouldPersistTaps="handled"
-              ListEmptyComponent={
-                !searchLoading ? (
-                  <Text style={[styles.noResults, { color: c.subtext }]}>No restaurants found</Text>
-                ) : null
-              }
-              renderItem={({ item }) => (
-                <RestaurantRow item={item} onPress={() => router.push(`/restaurant/${item.id}`)} />
-              )}
-            />
+            <View style={styles.results}>
+              <FlatList
+                data={searchResults}
+                keyExtractor={(item) => item.id}
+                keyboardShouldPersistTaps="handled"
+                ItemSeparatorComponent={() => <View style={styles.resultSep} />}
+                ListEmptyComponent={
+                  !searchLoading ? (
+                    <Text style={[styles.noResults, { color: c.meta }]}>
+                      No places found. New places can take a few weeks to appear after the council
+                      registers them.
+                    </Text>
+                  ) : null
+                }
+                renderItem={({ item }) => (
+                  <RestaurantRow item={item} onPress={() => router.push(`/restaurant/${item.id}`)} />
+                )}
+              />
+            </View>
           )
         ) : loading ? (
-          <View style={[styles.loading, { backgroundColor: c.card }]}>
-            <ActivityIndicator size="small" color={c.primary} />
+          <View style={styles.loading}>
+            <ActivityIndicator size="small" color={c.meta} />
           </View>
         ) : !isSupabaseConfigured ? (
-          <View style={[styles.statusBanner, { backgroundColor: c.text }]}>
-            <Text style={styles.statusTitle}>Not connected</Text>
-            <Text style={[styles.statusBody, { color: c.onDarkMuted }]}>
+          <View style={styles.banner}>
+            <Text style={[styles.bannerTitle, { color: c.label }]}>Not connected</Text>
+            <Text style={[styles.bannerBody, { color: c.label2 }]}>
               This build shipped without its Supabase keys, so no ratings can load. Rebuild with
               a .env file present.
             </Text>
           </View>
         ) : pinError ? (
-          <View style={[styles.statusBanner, { backgroundColor: c.text }]}>
-            <Text style={styles.statusTitle}>Couldn't load ratings</Text>
-            <Text style={[styles.statusBody, { color: c.onDarkMuted }]}>{pinError}</Text>
+          <View style={styles.banner}>
+            <Text style={[styles.bannerTitle, { color: c.label }]}>Couldn't load ratings</Text>
+            <Text style={[styles.bannerBody, { color: c.label2 }]}>{pinError}</Text>
           </View>
         ) : emptyHere ? (
-          <View style={[styles.statusBanner, { backgroundColor: c.card }]}>
-            <Text style={[styles.statusTitle, { color: c.text }]}>Nothing rated here yet</Text>
-            <Text style={[styles.statusBody, { color: c.mutedOnCard }]}>
-              Try zooming out, or search by restaurant name above.
+          <View style={styles.banner}>
+            <Text style={[styles.bannerTitle, { color: c.label }]}>Nothing rated here yet</Text>
+            <Text style={[styles.bannerBody, { color: c.label2 }]}>
+              Try zooming out, or search by name or postcode above.
             </Text>
           </View>
         ) : null}
@@ -558,54 +553,31 @@ export default function MapScreen() {
               ? 'Turn the map to face the way I am'
               : 'Stop following my location'
         }
-        style={[
-          styles.locateBtn,
-          {
-            // Filled while a mode is active, so the button reads as a state
-            // rather than a one-shot action — you can tell at a glance whether
-            // the map is about to move under you.
-            backgroundColor: locateMode === 'free' ? c.card : c.primary,
-            borderColor: locateMode === 'free' ? c.controlBorder : c.primary,
-            bottom: insets.bottom + (selected ? 96 : 20),
-          },
-        ]}
+        style={[styles.locateBtn, { bottom: bottomInset + (selected ? 84 : 0) }]}
         hitSlop={8}
       >
         {locating ? (
-          <ActivityIndicator size="small" color={locateMode === 'free' ? c.primary : '#FFFFFF'} />
+          <ActivityIndicator size="small" color={c.blue} />
         ) : (
-          <Ionicons
-            name={MODE_ICON[locateMode]}
-            size={22}
-            color={locateMode === 'free' ? c.primary : '#FFFFFF'}
-          />
+          <Ionicons name={MODE_ICON[locateMode]} size={21} color={c.blue} />
         )}
       </Pressable>
 
       {selected ? (
         <Pressable
           onPress={() => router.push(`/restaurant/${selected.id}`)}
-          style={[styles.preview, { backgroundColor: c.text, bottom: insets.bottom + 16 }]}
+          style={({ pressed }) => [styles.preview, { bottom: bottomInset, opacity: pressed ? 0.85 : 1 }]}
         >
-          <View
-            style={[
-              styles.previewBadge,
-              { backgroundColor: colorForRating(selected.rating_value) },
-            ]}
-          >
-            <Text style={styles.previewBadgeText}>
-              {isNumericRating(selected.rating_value) ? selected.rating_value : '–'}
-            </Text>
-          </View>
+          <ScoreBadge rating={selected.rating_value} size={44} />
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.previewName} numberOfLines={1}>
+            <Text style={[styles.previewName, { color: c.label }]} numberOfLines={1}>
               {selected.name}
             </Text>
-            <Text style={[styles.previewMeta, { color: c.onDarkMuted }]} numberOfLines={1}>
-              {selectedCategory}
+            <Text style={[styles.previewMeta, { color: c.meta }]} numberOfLines={1}>
+              {categoryOne(selected.business_type)}
             </Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#EFE8D8" />
+          <Ionicons name="chevron-forward" size={18} color={c.chevron} />
         </Pressable>
       ) : null}
     </View>
@@ -614,103 +586,89 @@ export default function MapScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  overlay: { position: 'absolute', top: 0, left: 0, right: 0 },
+  overlay: { position: 'absolute', top: 0, left: 0, right: 0, gap: 10 },
   search: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginHorizontal: 14,
-    marginTop: 6,
-    marginBottom: 11,
-    paddingHorizontal: 15,
-    height: 50,
-    borderRadius: 17,
-    borderWidth: 1.5,
-    boxShadow: '0 6px 18px rgba(23,23,15,0.1)',
-  },
-  searchInput: { flex: 1, fontSize: 16, fontFamily: fonts.body, padding: 0 },
-  errorBanner: {
-    marginHorizontal: 14,
-    marginBottom: 8,
+    marginHorizontal: 16,
+    marginTop: 8,
     paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1.5,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    boxShadow: '0 4px 18px rgba(0,0,0,0.08)',
   },
-  errorText: { fontSize: 12.5, fontFamily: fonts.body, lineHeight: 18 },
-  resultsList: {
-    marginHorizontal: 14,
-    marginBottom: 8,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    maxHeight: 340,
+  searchInput: { flex: 1, fontSize: 17, padding: 0 },
+  results: {
+    marginHorizontal: 16,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    maxHeight: 360,
     overflow: 'hidden',
-    boxShadow: '0 6px 18px rgba(23,23,15,0.12)',
+    boxShadow: '0 6px 20px rgba(0,0,0,0.1)',
   },
-  noResults: { fontSize: 14, fontFamily: fonts.body, textAlign: 'center', padding: 20 },
-  pinWrap: { alignItems: 'center' },
-  pinTile: {
+  resultSep: { height: StyleSheet.hairlineWidth, backgroundColor: '#E5E5EA', marginLeft: 74 },
+  noResults: { fontSize: 15, textAlign: 'center', padding: 20, lineHeight: 20 },
+  pin: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    borderWidth: 2.5,
+    borderColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    boxShadow: '0 3px 8px rgba(4,45,26,0.35)',
+    boxShadow: '0 3px 10px rgba(0,0,0,0.2)',
   },
-  pinText: { color: '#fff', fontFamily: fonts.display800 },
+  pinText: { fontSize: 17, fontWeight: '700' },
   cluster: {
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2.5,
-    borderColor: 'rgba(255,253,247,0.9)',
+    borderColor: '#FFFFFF',
+    boxShadow: '0 3px 10px rgba(0,0,0,0.2)',
   },
-  clusterText: { color: '#fff', fontFamily: fonts.display800 },
-  pinTail: {
-    width: 9,
-    height: 9,
-    borderRadius: 2,
-    marginTop: -6,
-    transform: [{ rotate: '45deg' }],
+  clusterText: { fontWeight: '700' },
+  loading: {
+    alignSelf: 'center',
+    padding: 8,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.94)',
   },
-  loading: { alignSelf: 'center', marginTop: 8, padding: 8, borderRadius: 10 },
-  statusBanner: {
-    marginHorizontal: 14,
-    marginTop: 8,
+  banner: {
+    marginHorizontal: 16,
     paddingVertical: 12,
     paddingHorizontal: 14,
-    borderRadius: 16,
-    boxShadow: '0 6px 18px rgba(23,23,15,0.12)',
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    boxShadow: '0 6px 20px rgba(0,0,0,0.1)',
   },
-  statusTitle: { color: '#fff', fontSize: 15, fontFamily: fonts.display600 },
-  statusBody: { fontSize: 12.5, fontFamily: fonts.body, lineHeight: 18, marginTop: 3 },
+  bannerTitle: { fontSize: 15, fontWeight: '600' },
+  bannerBody: { fontSize: 14, lineHeight: 19, marginTop: 2 },
   locateBtn: {
     position: 'absolute',
-    right: 14,
+    right: 16,
     width: 44,
     height: 44,
-    borderRadius: 15,
-    borderWidth: 1.5,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.96)',
     alignItems: 'center',
     justifyContent: 'center',
-    boxShadow: '0 4px 12px rgba(23,23,15,0.1)',
+    boxShadow: '0 4px 14px rgba(0,0,0,0.1)',
   },
   preview: {
     position: 'absolute',
-    left: 14,
-    right: 14,
+    left: 16,
+    right: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    borderRadius: 19,
+    gap: 14,
+    borderRadius: 16,
     paddingVertical: 12,
     paddingHorizontal: 14,
-    boxShadow: '0 10px 26px rgba(23,23,15,0.28)',
+    backgroundColor: '#FFFFFF',
+    boxShadow: '0 8px 24px rgba(0,0,0,0.14)',
   },
-  previewBadge: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  previewBadgeText: { color: '#fff', fontFamily: fonts.display800, fontSize: 21 },
-  previewName: { color: '#fff', fontSize: 16.5, fontFamily: fonts.display600 },
-  previewMeta: { fontSize: 13, fontFamily: fonts.body, marginTop: 2 },
+  previewName: { fontSize: 17, fontWeight: '600' },
+  previewMeta: { fontSize: 14, marginTop: 2 },
 })

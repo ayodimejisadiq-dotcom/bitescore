@@ -1,11 +1,34 @@
 import { useEffect, useState } from 'react'
-import { View, Text, TextInput, Pressable, Modal, ActivityIndicator, StyleSheet, Alert } from 'react-native'
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useTheme } from '@/theme/useTheme'
-import { fonts } from '@/theme/type'
-import { EdgeButton } from './ui'
+import { Button } from './ui'
 import { submitReview, deleteReview } from '@/lib/data'
 import type { Review } from '@/lib/types'
+
+export function AnonymousCheckbox({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  const c = useTheme()
+  return (
+    <Pressable style={styles.anonRow} onPress={() => onChange(!value)} hitSlop={8} accessibilityRole="checkbox" accessibilityState={{ checked: value }}>
+      <View style={[styles.box, value ? { backgroundColor: c.tint, borderColor: c.tint } : { borderColor: c.chevron }]}>
+        {value ? <Ionicons name="checkmark" size={16} color="#fff" /> : null}
+      </View>
+      <Text style={[styles.anonLabel, { color: c.label2 }]}>Post anonymously</Text>
+    </Pressable>
+  )
+}
 
 export function ReviewComposer({
   visible,
@@ -23,6 +46,7 @@ export function ReviewComposer({
   onDeleted: () => void
 }) {
   const c = useTheme()
+  const insets = useSafeAreaInsets()
   const [body, setBody] = useState('')
   const [anonymous, setAnonymous] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -39,8 +63,7 @@ export function ReviewComposer({
     if (!trimmed) return
     setSaving(true)
     try {
-      const review = await submitReview({ restaurantId, body: trimmed, isAnonymous: anonymous })
-      onSaved(review)
+      onSaved(await submitReview({ restaurantId, body: trimmed, isAnonymous: anonymous }))
     } catch {
       Alert.alert('Couldn’t post your review', 'Check your connection and try again.')
     } finally {
@@ -71,84 +94,72 @@ export function ReviewComposer({
   }
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={[styles.card, { backgroundColor: c.card }]} onPress={() => {}}>
-          <Text style={[styles.title, { color: c.text }]}>
-            {existingReview ? 'Edit your review' : 'Write a review'}
-          </Text>
-          <TextInput
-            value={body}
-            onChangeText={setBody}
-            placeholder="What was it like?"
-            placeholderTextColor={c.disabled}
-            multiline
-            maxLength={2000}
-            style={[styles.input, { backgroundColor: c.bg, color: c.text, borderColor: c.border }]}
-          />
-          <Pressable style={styles.anonRow} onPress={() => setAnonymous((a) => !a)} hitSlop={8}>
-            <Ionicons
-              name={anonymous ? 'checkbox' : 'square-outline'}
-              size={20}
-              color={anonymous ? c.primary : c.mutedOnCard}
-            />
-            <Text style={[styles.anonLabel, { color: c.text }]}>Post anonymously</Text>
-          </Pressable>
-
-          <EdgeButton
-            color={c.primary}
-            edgeColor={c.primaryDark}
-            edge={4}
-            radius={16}
-            onPress={onSubmit}
-            disabled={saving || !body.trim()}
-            style={styles.primaryBtn}
-          >
-            {saving ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.primaryBtnText}>{existingReview ? 'Save changes' : 'Post review'}</Text>
-            )}
-          </EdgeButton>
-
-          {existingReview ? (
-            <Pressable onPress={onDelete} disabled={deleting} style={styles.deleteBtn}>
-              {deleting ? (
-                <ActivityIndicator color={c.mutedOnCard} />
-              ) : (
-                <Text style={styles.deleteBtnText}>Delete review</Text>
-              )}
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={styles.backdrop} onPress={onClose} />
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
+          <View style={styles.nav}>
+            <Pressable onPress={onClose} hitSlop={10}>
+              <Text style={[styles.navText, { color: c.tint }]}>Cancel</Text>
             </Pressable>
-          ) : null}
-
-          <Pressable onPress={onClose} style={styles.cancelBtn}>
-            <Text style={[styles.cancelBtnText, { color: c.mutedOnCard }]}>Cancel</Text>
-          </Pressable>
-        </Pressable>
-      </Pressable>
+            <Text style={[styles.navTitle, { color: c.label }]}>
+              {existingReview ? 'Edit review' : 'Write a review'}
+            </Text>
+            <View style={{ width: 52 }} />
+          </View>
+          <View style={styles.card}>
+            <TextInput
+              value={body}
+              onChangeText={setBody}
+              placeholder="Food, service, cleanliness…"
+              placeholderTextColor={c.meta}
+              multiline
+              maxLength={2000}
+              autoFocus
+              style={[styles.input, { backgroundColor: c.bg, color: c.label }]}
+            />
+            <AnonymousCheckbox value={anonymous} onChange={setAnonymous} />
+          </View>
+          <View style={{ paddingHorizontal: 16, marginTop: 16, gap: 4 }}>
+            <Button
+              label={existingReview ? 'Save changes' : 'Post'}
+              onPress={onSubmit}
+              loading={saving}
+              disabled={!body.trim()}
+            />
+            {existingReview ? (
+              <Pressable onPress={onDelete} disabled={deleting} style={styles.deleteBtn}>
+                {deleting ? (
+                  <ActivityIndicator color={c.meta} />
+                ) : (
+                  <Text style={[styles.deleteText, { color: c.danger }]}>Delete review</Text>
+                )}
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   )
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(23,23,15,0.36)', alignItems: 'center', justifyContent: 'center' },
-  card: { width: '88%', borderRadius: 24, padding: 20 },
-  title: { fontSize: 21, fontFamily: fonts.display800, marginBottom: 12 },
-  input: {
-    borderRadius: 16,
-    borderWidth: 1.5,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    minHeight: 110,
-    textAlignVertical: 'top',
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
+  sheet: { backgroundColor: '#F2F2F7', borderTopLeftRadius: 22, borderTopRightRadius: 22 },
+  nav: {
+    height: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
   },
-  anonRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
-  anonLabel: { fontSize: 14, fontFamily: fonts.bodyMedium },
-  primaryBtn: { marginTop: 16, paddingVertical: 13, borderRadius: 16, alignItems: 'center' },
-  primaryBtnText: { color: '#fff', fontFamily: fonts.display600, fontSize: 16 },
-  deleteBtn: { alignItems: 'center', marginTop: 12, paddingVertical: 4 },
-  deleteBtnText: { color: '#E24B29', fontSize: 14, fontFamily: fonts.display600 },
-  cancelBtn: { alignItems: 'center', marginTop: 10, paddingVertical: 4 },
-  cancelBtnText: { fontSize: 15, fontFamily: fonts.display600 },
+  navText: { fontSize: 17 },
+  navTitle: { fontSize: 17, fontWeight: '600' },
+  card: { marginHorizontal: 16, backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, gap: 12 },
+  input: { minHeight: 110, borderRadius: 12, padding: 12, fontSize: 16, textAlignVertical: 'top' },
+  anonRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  box: { width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  anonLabel: { fontSize: 15 },
+  deleteBtn: { alignItems: 'center', paddingVertical: 12 },
+  deleteText: { fontSize: 16, fontWeight: '600' },
 })

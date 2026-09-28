@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   View,
   Text,
@@ -11,118 +11,158 @@ import {
   Platform,
   Share,
 } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
-import { useLocalSearchParams, useRouter } from 'expo-router'
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
 import { useTheme } from '@/theme/useTheme'
-import { fonts } from '@/theme/type'
-import { colorForRating, edgeForRating, NEUTRAL_RATING } from '@/theme/colors'
-import { EdgeButton, tileEdge } from '@/components/ui'
+import { heroTextForRating, heroTintForRating } from '@/theme/colors'
+import { ScoreBadge } from '@/components/ScoreBadge'
+import {
+  Avatar,
+  AvatarStack,
+  Button,
+  GroupedCard,
+  HeroIconButton,
+  Row,
+  SectionHeader,
+} from '@/components/ui'
 import { SaveToListModal } from '@/components/SaveToListModal'
 import { ReviewComposer } from '@/components/ReviewComposer'
+import { LogVisitSheet } from '@/components/LogVisitSheet'
+import { DinerCheckCard } from '@/components/DinerCheckCard'
+import { categoryOne } from '@/components/RestaurantRow'
+import { isNumericRating, ratingDescription, FSA_ATTRIBUTION } from '@/lib/fsa'
 import {
-  BUSINESS_TYPE_LABEL,
-  isNumericRating,
-  ratingDescription,
-  inspectionStatusLine,
-} from '@/lib/fsa'
-import {
+  blockReviewAuthor,
+  currentUserId,
+  fetchMyLists,
+  follow,
+  followingSet,
+  getDinerCheck,
+  getFollowedVisitors,
+  getMyReview,
   getRestaurant,
   getReviews,
-  getMyReview,
+  listIdsContaining,
   lookupPlaceData,
+  myVisitToday,
   reportReview,
-  blockUser,
+  setDinerCheck,
+  undoVisitToday,
+  visitErrorMessage,
 } from '@/lib/data'
-import { recordCheck, recordReview } from '@/lib/game'
-import type { OpeningHours, Restaurant, Review } from '@/lib/types'
+import { hoursForDay, openLabel, openState, todayIndexMon0 } from '@/lib/hours'
+import { lastKnownCoords } from '@/lib/location'
+import { displayName, distanceLabel, joinNames, metersBetween, shortName, timeAgo } from '@/lib/people'
+import { scheduleDirectionsFollowUp } from '@/lib/followups'
+import type {
+  DinerCheckSummary,
+  ListSummary,
+  OpeningHours,
+  PersonCard,
+  Restaurant,
+  Review,
+  Verdict,
+} from '@/lib/types'
 
-// "Monday: 9 AM – 11 PM" → { day: "Monday", hours: "9 AM – 11 PM" }.
-function splitHoursLine(line: string): { day: string; hours: string } {
-  const idx = line.indexOf(':')
-  if (idx === -1) return { day: line, hours: '' }
-  return { day: line.slice(0, idx), hours: line.slice(idx + 1).trim() }
+const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+function monthYear(date: string | null): string | null {
+  if (!date) return null
+  return new Date(date).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
 }
 
-// Google weekday_text starts Monday; JS getDay() starts Sunday.
-function todayIndex(): number {
-  return (new Date().getDay() + 6) % 7
-}
-
-// Six-bar strip that places the score on the 0–5 scale — this is what makes
-// the number legible to someone unfamiliar with the FSA scheme.
-function ScaleStrip({ rating }: { rating: string }) {
-  const value = isNumericRating(rating) ? Number(rating) : null
-  return (
-    <View style={{ marginTop: 16 }}>
-      <View style={styles.scaleRow}>
-        {[0, 1, 2, 3, 4, 5].map((i) => (
-          <View
-            key={i}
-            style={[
-              styles.scaleBar,
-              i === value
-                ? { height: 14, borderRadius: 5, backgroundColor: '#FFFDF7' }
-                : { backgroundColor: 'rgba(255,255,255,0.28)' },
-            ]}
-          />
-        ))}
-      </View>
-      <View style={styles.scaleLabels}>
-        <Text style={styles.scaleLabel}>0 · urgent</Text>
-        <Text style={styles.scaleLabel}>5 · very good</Text>
-      </View>
-    </View>
-  )
+function fullDate(date: string | null): string | null {
+  if (!date) return null
+  return new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 export default function RestaurantDetail() {
   const c = useTheme()
   const router = useRouter()
+  const insets = useSafeAreaInsets()
   const { id } = useLocalSearchParams<{ id: string }>()
+
   const [place, setPlace] = useState<Restaurant | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
   const [reviews, setReviews] = useState<Review[]>([])
   const [myReview, setMyReview] = useState<Review | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [me, setMe] = useState<string | null>(null)
+  const [following, setFollowing] = useState<Set<string>>(new Set())
+  const [hours, setHours] = useState<OpeningHours | null>(null)
+  const [google, setGoogle] = useState<{ rating: number | null; count: number | null }>({ rating: null, count: null })
+  const [distance, setDistance] = useState<number | null>(null)
+  const [visitors, setVisitors] = useState<{ total: number; people: PersonCard[] }>({ total: 0, people: [] })
+  const [dinerCheck, setDinerCheckState] = useState<DinerCheckSummary | null>(null)
+  const [visit, setVisit] = useState<{ id: string; verified: boolean; visited_at: string } | null>(null)
+  const [savedIn, setSavedIn] = useState<ListSummary[]>([])
+  const [showWeek, setShowWeek] = useState(false)
+
   const [saveOpen, setSaveOpen] = useState(false)
   const [composerOpen, setComposerOpen] = useState(false)
-  const [googleRating, setGoogleRating] = useState<number | null>(null)
-  const [googleRatingCount, setGoogleRatingCount] = useState<number | null>(null)
-  const [hours, setHours] = useState<OpeningHours | null>(null)
-  const [loadError, setLoadError] = useState(false)
+  const [logOpen, setLogOpen] = useState(false)
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true)
     setLoadError(false)
     ;(async () => {
       try {
-        const [p, r, mine] = await Promise.all([getRestaurant(id), getReviews(id), getMyReview(id)])
+        const [p, r, mine, uid] = await Promise.all([getRestaurant(id), getReviews(id), getMyReview(id), currentUserId()])
         setPlace(p)
         setReviews(r)
         setMyReview(mine)
-        setGoogleRating(p?.google_rating ?? null)
-        setGoogleRatingCount(p?.google_rating_count ?? null)
+        setMe(uid)
         setHours(p?.hours_cache ?? null)
-        // Game layer: opening a place counts as a "check".
-        if (p) recordCheck(p.id, p.rating_value)
+        setGoogle({ rating: p?.google_rating ?? null, count: p?.google_rating_count ?? null })
+        const authors = r.map((rv) => rv.user_id).filter((u): u is string => !!u && u !== uid)
+        setFollowing(await followingSet(Array.from(new Set(authors))))
+        if (p?.lat != null && p?.lng != null) {
+          const here = await lastKnownCoords()
+          if (here) setDistance(metersBetween(here, { lat: p.lat, lng: p.lng }))
+        }
       } catch {
         setLoadError(true)
       } finally {
         setLoading(false)
       }
     })()
-  }
+  }, [id])
 
-  useEffect(load, [id])
+  useEffect(load, [load])
 
-  // Fire-and-forget: refreshes Google rating + hours in the background (the
-  // server no-ops if its own cache is still fresh, so this is cheap to call
-  // on every view).
+  // Social bits refresh on focus: a vote or list change made elsewhere shows.
+  const loadSocial = useCallback(async () => {
+    const [dc, v, fv, lists] = await Promise.allSettled([
+      getDinerCheck(id),
+      myVisitToday(id),
+      getFollowedVisitors(id),
+      fetchMyLists(),
+    ])
+    if (dc.status === 'fulfilled') setDinerCheckState(dc.value)
+    if (v.status === 'fulfilled') setVisit(v.value)
+    if (fv.status === 'fulfilled') setVisitors(fv.value)
+    if (lists.status === 'fulfilled') {
+      const contains = await listIdsContaining(id, lists.value.map((l) => l.id)).catch(() => new Set<string>())
+      setSavedIn(lists.value.filter((l) => contains.has(l.id)))
+    }
+  }, [id])
+
+  useFocusEffect(
+    useCallback(() => {
+      loadSocial()
+    }, [loadSocial]),
+  )
+
+  // Refreshes Google rating + hours in the background; the server skips the
+  // Google call if its cache is still fresh, so this is cheap on every view.
   useEffect(() => {
     lookupPlaceData(id).then((result) => {
       if (!result) return
-      if (result.googleRating !== null) setGoogleRating(result.googleRating)
-      if (result.googleRatingCount !== null) setGoogleRatingCount(result.googleRatingCount)
+      setGoogle((g) => ({
+        rating: result.googleRating ?? g.rating,
+        count: result.googleRatingCount ?? g.count,
+      }))
       if (result.hours) setHours(result.hours)
     })
   }, [id])
@@ -130,48 +170,124 @@ export default function RestaurantDetail() {
   if (loading) {
     return (
       <View style={[styles.center, { backgroundColor: c.bg }]}>
-        <ActivityIndicator color={c.primary} />
+        <ActivityIndicator color={c.meta} />
       </View>
     )
   }
 
   if (loadError || !place) {
     return (
-      <View style={[styles.center, { backgroundColor: c.bg }]}>
-        <Text style={{ color: c.subtext, fontFamily: fonts.body }}>
+      <View style={[styles.center, { backgroundColor: c.bg, paddingHorizontal: 32 }]}>
+        <Text style={{ color: c.label2, fontSize: 16, textAlign: 'center' }}>
           {loadError ? 'Couldn’t load this place. Check your connection.' : 'This place couldn’t be found.'}
         </Text>
-        {loadError ? (
-          <EdgeButton
-            color={c.primary}
-            edgeColor={c.primaryDark}
-            onPress={load}
-            style={styles.retryBtn}
-          >
-            <Text style={styles.footerBtnTextOnGreen}>Retry</Text>
-          </EdgeButton>
-        ) : null}
+        {loadError ? <Button label="Retry" onPress={load} style={{ marginTop: 16, alignSelf: 'stretch' }} /> : null}
+        <Button label="Back" variant="plain" onPress={() => router.back()} />
       </View>
     )
   }
 
-  const hoursLines = hours?.weekday_text
-  const openNow = hours?.open_now
-  const todayIdx = todayIndex()
-  const todayHours = hoursLines?.length === 7 ? splitHoursLine(hoursLines[todayIdx]).hours : null
-
   const numeric = isNumericRating(place.rating_value)
-  const heroFill = numeric ? colorForRating(place.rating_value) : NEUTRAL_RATING
-  const heroEdge = numeric ? edgeForRating(place.rating_value) : '#9A947F'
+  const state = openState(hours?.weekday_text)
+  const openText = openLabel(state)
+  const meta = [categoryOne(place.business_type), distanceLabel(distance), openText]
+    .filter(Boolean)
+    .join(' · ')
 
-  const onReportReview = (reviewId: string) => {
-    Alert.alert('Report this review?', 'We’ll take a look and hide it if others agree.', [
+  const onShare = () => {
+    Share.share({
+      message: `${place.name} has a food hygiene rating of ${place.rating_value}/5 on Bitescore`,
+    }).catch(() => {})
+  }
+
+  const onDirections = () => {
+    if (place.lat == null || place.lng == null) {
+      Alert.alert('No location available', 'We don’t have coordinates for this place yet.')
+      return
+    }
+    const { lat, lng } = place
+    const label = encodeURIComponent(place.name)
+    const appleUrl = `http://maps.apple.com/?daddr=${lat},${lng}&dirflg=w&q=${label}`
+    const googleUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=walking`
+    const go = (url: string) => {
+      Linking.openURL(url)
+      // "Did you visit …?" in two hours, unless they log a visit first.
+      if (!visit) scheduleDirectionsFollowUp({ id: place.id, name: place.name })
+    }
+    if (Platform.OS === 'ios') {
+      Alert.alert('Get directions', undefined, [
+        { text: 'Apple Maps', onPress: () => go(appleUrl) },
+        { text: 'Google Maps', onPress: () => go(googleUrl) },
+        { text: 'Cancel', style: 'cancel' },
+      ])
+    } else {
+      go(googleUrl)
+    }
+  }
+
+  const onVisitButton = () => {
+    if (!visit) {
+      setLogOpen(true)
+      return
+    }
+    Alert.alert('Undo today’s visit?', undefined, [
       { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Report',
+        text: 'Undo',
+        style: 'destructive',
         onPress: async () => {
           try {
-            const { alreadyReported } = await reportReview(reviewId)
+            await undoVisitToday(visit.id)
+            setVisit(null)
+            const dc = await getDinerCheck(place.id)
+            // A vote needs a verified visit behind it.
+            if (!dc.can_vote && dc.my_verdict) {
+              await setDinerCheck(place.id, null)
+              setDinerCheckState(await getDinerCheck(place.id))
+            } else {
+              setDinerCheckState(dc)
+            }
+          } catch (e) {
+            Alert.alert('Couldn’t undo', visitErrorMessage(e))
+          }
+        },
+      },
+    ])
+  }
+
+  const onVote = async (v: Verdict | null) => {
+    if (!dinerCheck) return
+    const prev = dinerCheck
+    setDinerCheckState({ ...dinerCheck, my_verdict: v })
+    try {
+      await setDinerCheck(place.id, v)
+      setDinerCheckState(await getDinerCheck(place.id))
+    } catch (e) {
+      setDinerCheckState(prev)
+      Alert.alert('Couldn’t save your diner check', visitErrorMessage(e))
+    }
+  }
+
+  const onFollow = async (userId: string) => {
+    setFollowing((s) => new Set(s).add(userId))
+    try {
+      await follow(userId)
+    } catch {
+      setFollowing((s) => {
+        const n = new Set(s)
+        n.delete(userId)
+        return n
+      })
+    }
+  }
+
+  const onReviewOptions = (review: Review) => {
+    Alert.alert('Review options', undefined, [
+      {
+        text: 'Report review',
+        onPress: async () => {
+          try {
+            const { alreadyReported } = await reportReview(review.id)
             Alert.alert(
               alreadyReported ? 'Already reported' : 'Reported',
               alreadyReported ? 'You already reported this review.' : 'Thanks — we’ll take a look.',
@@ -181,312 +297,234 @@ export default function RestaurantDetail() {
           }
         },
       },
-    ])
-  }
-
-  const onBlockUser = (userId: string) => {
-    Alert.alert('Block this reviewer?', 'You won’t see their reviews anymore.', [
-      { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Block',
+        text: 'Block this reviewer',
         style: 'destructive',
         onPress: async () => {
           try {
-            await blockUser(userId)
-            setReviews(await getReviews(id))
+            await blockReviewAuthor(review.id)
+            setReviews(await getReviews(place.id))
           } catch {
             Alert.alert('Couldn’t block', 'Check your connection and try again.')
           }
         },
       },
-    ])
-  }
-
-  const onReviewOptions = (review: Review) => {
-    Alert.alert('Review options', undefined, [
-      { text: 'Report review', onPress: () => onReportReview(review.id) },
-      { text: 'Block this reviewer', style: 'destructive', onPress: () => onBlockUser(review.user_id) },
       { text: 'Cancel', style: 'cancel' },
     ])
   }
 
-  const onShare = () => {
-    Share.share({
-      message: `${place.name} — hygiene rating ${place.rating_value}/5 on Bitescore`,
-    }).catch(() => {})
-  }
+  const visitedLabel = visit ? 'Visited today' : 'I’ve been here'
+  const visitNote = visit
+    ? visit.verified
+      ? 'Verified by location · tap to undo'
+      : 'Logged without proof · tap to undo'
+    : distance !== null && distance <= 75
+      ? `You're ${distanceLabel(distance)} away, so this visit will be verified`
+      : 'Log it while you’re there to verify it'
 
-  const onGetDirections = () => {
-    if (place.lat == null || place.lng == null) {
-      Alert.alert('No location available', 'We don’t have coordinates for this place yet.')
-      return
-    }
-    const { lat, lng } = place
-    const label = encodeURIComponent(place.name)
-    const appleUrl = `http://maps.apple.com/?daddr=${lat},${lng}&dirflg=w&q=${label}`
-    const googleUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=walking`
-
-    if (Platform.OS === 'ios') {
-      Alert.alert('Get directions', undefined, [
-        { text: 'Apple Maps', onPress: () => Linking.openURL(appleUrl) },
-        { text: 'Google Maps', onPress: () => Linking.openURL(googleUrl) },
-        { text: 'Cancel', style: 'cancel' },
-      ])
-    } else {
-      Linking.openURL(googleUrl)
-    }
-  }
-
-  const category = BUSINESS_TYPE_LABEL[place.business_type] ?? place.business_type
-  const categoryOne =
-    category.endsWith('s') && !category.includes('&') ? category.slice(0, -1) : category
+  const savedPeople = savedIn.flatMap((l) => l.people).filter((p) => p.user_id !== me)
+  const uniqueSavedPeople = Array.from(new Map(savedPeople.map((p) => [p.user_id, p])).values())
 
   return (
-    <SafeAreaView edges={['top']} style={[styles.root, { backgroundColor: c.bg }]}>
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 120 }}>
-        <View style={styles.navRow}>
-          <Pressable
-            onPress={() => router.back()}
-            style={[styles.navBtn, { backgroundColor: c.card, borderColor: c.controlBorder }]}
-            hitSlop={8}
-          >
-            <Ionicons name="chevron-back" size={22} color={c.text} />
-          </Pressable>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <Pressable
-              onPress={() => setSaveOpen(true)}
-              style={[styles.navBtn, { backgroundColor: c.card, borderColor: c.controlBorder }]}
-              hitSlop={8}
-            >
-              <Ionicons name="bookmark-outline" size={20} color={c.text} />
-            </Pressable>
-            <Pressable
-              onPress={onShare}
-              style={[styles.navBtn, { backgroundColor: c.card, borderColor: c.controlBorder }]}
-              hitSlop={8}
-            >
-              <Ionicons name="share-outline" size={20} color={c.text} />
-            </Pressable>
+    <View style={[styles.root, { backgroundColor: c.bg }]}>
+      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}>
+        {/* Hero, in a soft tint of the score colour */}
+        <View style={{ backgroundColor: heroTintForRating(place.rating_value), paddingTop: insets.top, paddingBottom: 22 }}>
+          <View style={styles.heroNav}>
+            <Text style={[styles.brand, { color: c.label }]} pointerEvents="none" accessibilityRole="header">
+              Bitescore
+            </Text>
+            <HeroIconButton icon="chevron-back" label="Back" onPress={() => router.back()} />
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <HeroIconButton
+                icon={savedIn.length ? 'bookmark' : 'bookmark-outline'}
+                label="Save to a list"
+                onPress={() => setSaveOpen(true)}
+              />
+              <HeroIconButton icon="share-outline" label="Share" onPress={onShare} />
+            </View>
+          </View>
+          <View style={styles.heroBody}>
+            <ScoreBadge rating={place.rating_value} size={88} glow />
+            <Text style={[styles.ratingWord, { color: heroTextForRating(place.rating_value) }]}>
+              {ratingDescription(place.rating_value)}
+            </Text>
+            <View style={styles.fsaPill}>
+              <Ionicons name="shield-checkmark" size={13} color={c.label2} />
+              <Text style={[styles.fsaPillText, { color: c.label2 }]}>Official FSA hygiene rating</Text>
+            </View>
+            <Text style={[styles.name, { color: c.label }]}>{place.name}</Text>
+            {meta ? <Text style={[styles.meta, { color: c.label2 }]}>{meta}</Text> : null}
+            {visitors.total > 0 ? (
+              <View style={styles.visitors}>
+                <AvatarStack
+                  people={visitors.people}
+                  size={22}
+                  ring={heroTintForRating(place.rating_value)}
+                />
+                <Text style={[styles.visitorsText, { color: c.label2 }]}>
+                  {joinNames(visitors.people.map(shortName), visitors.total)}{' '}
+                  {visitors.total === 1 ? 'has' : 'have'} been here
+                </Text>
+              </View>
+            ) : null}
           </View>
         </View>
 
-        <View style={[styles.catPill, { backgroundColor: c.primaryTint }]}>
-          <View style={[styles.catDot, { backgroundColor: c.primary }]} />
-          <Text style={[styles.catText, { color: c.primary }]}>{categoryOne.toUpperCase()}</Text>
+        {/* Actions */}
+        <View style={styles.actions}>
+          <Button
+            label={visitedLabel}
+            icon={visit ? 'checkmark' : 'add'}
+            variant={visit ? 'soft' : 'primary'}
+            onPress={onVisitButton}
+            style={{ flex: 1 }}
+          />
+          <Button label="Directions" icon="navigate-outline" variant="secondary" onPress={onDirections} style={{ flex: 1 }} />
         </View>
-        <Text style={[styles.name, { color: c.text }]}>{place.name}</Text>
-        {place.address ? (
-          <Text style={[styles.addr, { color: c.subtext }]}>
-            {place.address}
-            {place.postcode ? `, ${place.postcode}` : ''}
-          </Text>
+        <Text style={[styles.visitNote, { color: c.meta }]}>{visitNote}</Text>
+
+        {numeric && dinerCheck ? (
+          <View style={{ marginTop: 16 }}>
+            <DinerCheckCard summary={dinerCheck} inspected={monthYear(place.rating_date)} onVote={onVote} />
+          </View>
         ) : null}
 
-        {/* Score hero — the decision moment. Painted in the score's colour. */}
-        <View style={[styles.hero, { backgroundColor: heroFill }, tileEdge(heroEdge, 5)]}>
-          <View style={styles.heroTop}>
-            <View style={styles.heroTile}>
-              {numeric ? (
-                <Text style={[styles.heroNum, { color: heroEdge }]}>{place.rating_value}</Text>
-              ) : (
-                <Ionicons name="hourglass-outline" size={32} color={heroEdge} />
-              )}
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.heroWord}>{ratingDescription(place.rating_value)}</Text>
-              <Text style={styles.heroMeta}>
-                {inspectionStatusLine(place.rating_value, place.rating_date)}
-              </Text>
-            </View>
-          </View>
-          {numeric ? <ScaleStrip rating={place.rating_value} /> : null}
-        </View>
-
-        {/* Right now · Google · BiteScore */}
-        <View style={styles.statRow}>
-          <View style={[styles.statCard, { backgroundColor: c.card, borderColor: c.border }]}>
-            <Text style={[styles.statK, { color: c.placeholder }]}>RIGHT NOW</Text>
-            <View style={styles.statValueRow}>
-              <View
-                style={[
-                  styles.openDot,
-                  { backgroundColor: openNow === true ? '#5EA632' : c.disabled },
-                ]}
-              />
-              <Text
-                style={[
-                  styles.statV,
-                  { color: openNow === true ? c.openNow : c.mutedOnCard },
-                ]}
-              >
-                {openNow === true ? 'Open' : openNow === false ? 'Closed' : '—'}
-              </Text>
-            </View>
-            <Text style={[styles.statSub, { color: c.placeholder }]} numberOfLines={1}>
-              {todayHours ?? 'hours coming soon'}
-            </Text>
-          </View>
-          <View style={[styles.statCard, { backgroundColor: c.card, borderColor: c.border }]}>
-            <Text style={[styles.statK, { color: c.placeholder }]}>GOOGLE</Text>
-            <View style={styles.statValueRow}>
-              {googleRating !== null ? (
-                <>
-                  <Ionicons name="star" size={14} color={c.star} />
-                  <Text style={[styles.statV, { color: c.text }]}>{googleRating.toFixed(1)}</Text>
-                </>
-              ) : (
-                <Text style={[styles.statV, { color: c.mutedOnCard }]}>—</Text>
-              )}
-            </View>
-            <Text style={[styles.statSub, { color: c.placeholder }]}>
-              {googleRatingCount !== null ? `${googleRatingCount} reviews` : 'no data yet'}
-            </Text>
-          </View>
-          <View style={[styles.statCard, { backgroundColor: c.text }]}>
-            <Text style={[styles.statK, { color: c.onDarkMuted }]}>BITESCORE</Text>
-            <Text style={[styles.statV, { color: '#fff' }]}>
-              {reviews.length === 0 ? 'Be first' : `${reviews.length}`}
-            </Text>
-            <Text style={[styles.statSub, { color: c.onDarkMuted }]}>
-              {reviews.length === 0 ? 'no reviews yet' : `review${reviews.length === 1 ? '' : 's'}`}
-            </Text>
-          </View>
-        </View>
-
-        {hoursLines && hoursLines.length ? (
-          <View style={[styles.hoursCard, { backgroundColor: c.card, borderColor: c.border }]}>
-            <View style={styles.hoursHead}>
-              <Text style={[styles.hoursTitle, { color: c.text }]}>Opening hours</Text>
-              <Text style={[styles.hoursToday, { color: c.placeholder }]}>
-                Today, {new Date().toLocaleDateString('en-GB', { weekday: 'long' })}
-              </Text>
-            </View>
-            {hoursLines.map((line, i) => {
-              const { day, hours: hrs } = splitHoursLine(line)
-              const isToday = hoursLines.length === 7 && i === todayIdx
-              const closed = /closed/i.test(hrs)
-              return (
-                <View
-                  key={line}
-                  style={[styles.hoursRow, isToday ? { backgroundColor: c.subtleFill, borderRadius: 8 } : null]}
-                >
-                  <Text
-                    style={[
-                      styles.hoursDay,
-                      { color: isToday ? c.text : closed ? c.disabled : c.inkSecondary },
-                      isToday ? { fontFamily: fonts.bodyBold } : null,
-                    ]}
-                  >
+        {/* Facts */}
+        <GroupedCard style={{ marginTop: 16 }}>
+          <Row
+            title="Last inspected"
+            value={numeric ? (fullDate(place.rating_date) ?? '—') : 'Not yet inspected'}
+          />
+          <Row
+            title="Hours"
+            value={openText ?? 'Not available'}
+            valueColor={state.kind === 'open' ? c.success : c.meta}
+            chevron={!!hours?.weekday_text?.length}
+            onPress={hours?.weekday_text?.length ? () => setShowWeek((s) => !s) : undefined}
+          />
+          {showWeek && hours?.weekday_text ? (
+            <View style={styles.week}>
+              {DAYS.map((day, i) => (
+                <View key={day} style={styles.weekRow}>
+                  <Text style={[styles.weekText, { color: c.label2 }, i === todayIndexMon0() ? styles.today : null]}>
                     {day}
                   </Text>
-                  <Text
-                    style={[
-                      styles.hoursVal,
-                      { color: isToday ? c.text : closed ? c.disabled : c.inkSecondary },
-                      isToday ? { fontFamily: fonts.bodyBold } : null,
-                    ]}
-                  >
-                    {hrs}
+                  <Text style={[styles.weekText, { color: c.label2 }, i === todayIndexMon0() ? styles.today : null]}>
+                    {hoursForDay(hours.weekday_text, i)}
                   </Text>
+                </View>
+              ))}
+              <Text style={[styles.weekSource, { color: c.meta }]}>Hours via Google</Text>
+            </View>
+          ) : null}
+          {google.rating !== null ? (
+            <Row
+              title="Google rating"
+              value={`★ ${google.rating.toFixed(1)}${google.count ? ` · ${google.count}` : ''}`}
+            />
+          ) : null}
+          <Row
+            title="Saved in"
+            value={savedIn.length ? savedIn.map((l) => l.name).join(', ') : 'Not saved'}
+            right={uniqueSavedPeople.length ? <AvatarStack people={uniqueSavedPeople} size={22} /> : undefined}
+            chevron
+            onPress={() => setSaveOpen(true)}
+          />
+        </GroupedCard>
+
+        {/* Reviews */}
+        <View style={styles.reviewsHead}>
+          <SectionHeader style={{ paddingHorizontal: 0, paddingBottom: 0 }}>Reviews</SectionHeader>
+          <Pressable onPress={() => setComposerOpen(true)} hitSlop={8}>
+            <Text style={[styles.writeLink, { color: c.tint }]}>{myReview ? 'Edit yours' : 'Write one'}</Text>
+          </Pressable>
+        </View>
+        {reviews.length === 0 ? (
+          <View style={styles.reviewCard}>
+            <Text style={[styles.reviewBody, { color: c.label2 }]}>
+              No reviews yet. Been here? Say how it was.
+            </Text>
+          </View>
+        ) : (
+          <View style={{ gap: 10 }}>
+            {reviews.map((r) => {
+              const isMine = r.user_id !== null && r.user_id === me
+              const author = r.is_anonymous
+                ? 'Anonymous'
+                : displayName({ username: r.username ?? r.display_name_snapshot, public_name: r.public_name })
+              const canOpen = !r.is_anonymous && r.user_id
+              return (
+                <View key={r.id} style={styles.reviewCard}>
+                  <View style={styles.reviewHead}>
+                    <Pressable
+                      disabled={!canOpen}
+                      onPress={() => canOpen && router.push(`/user/${r.user_id}`)}
+                      style={styles.reviewWho}
+                    >
+                      {r.is_anonymous || !r.user_id ? (
+                        <View style={[styles.anonAvatar, { backgroundColor: c.bg }]}>
+                          <Ionicons name="person" size={16} color={c.chevron} />
+                        </View>
+                      ) : (
+                        <Avatar person={{ user_id: r.user_id, username: r.username, public_name: r.public_name }} size={32} />
+                      )}
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={[styles.reviewName, { color: c.label }]} numberOfLines={1}>
+                          {isMine ? 'You' : author}
+                        </Text>
+                        <Text style={[styles.reviewWhen, { color: c.meta }]}>{timeAgo(r.created_at)}</Text>
+                      </View>
+                    </Pressable>
+                    {canOpen && !isMine && !following.has(r.user_id!) ? (
+                      <Pressable onPress={() => onFollow(r.user_id!)} style={[styles.followPill, { backgroundColor: c.tintSoft }]}>
+                        <Text style={[styles.followPillText, { color: c.tint }]}>Follow</Text>
+                      </Pressable>
+                    ) : null}
+                    {!isMine ? (
+                      <Pressable onPress={() => onReviewOptions(r)} hitSlop={10} accessibilityLabel="Review options">
+                        <Ionicons name="ellipsis-horizontal" size={18} color={c.meta} />
+                      </Pressable>
+                    ) : null}
+                  </View>
+                  <Text style={[styles.reviewBody, { color: c.label2 }]}>{r.body}</Text>
                 </View>
               )
             })}
           </View>
-        ) : null}
-
-        {/* Reviews */}
-        {reviews.length === 0 ? (
-          <Pressable
-            onPress={() => setComposerOpen(true)}
-            style={[styles.reviewPrompt, { borderColor: '#D9C9A6' }]}
-          >
-            <View style={[styles.reviewPlus, { backgroundColor: c.accent }, tileEdge(c.accentDark)]}>
-              <Ionicons name="add" size={24} color="#fff" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.reviewPromptTitle, { color: c.text }]}>
-                Nobody's reviewed this yet
-              </Text>
-              <Text style={[styles.reviewPromptSub, { color: c.subtext }]}>
-                Be the first — it takes about a minute.
-              </Text>
-            </View>
-          </Pressable>
-        ) : (
-          <View style={[styles.reviewsCard, { backgroundColor: c.card, borderColor: c.border }]}>
-            <View style={styles.reviewsHead}>
-              <Text style={[styles.hoursTitle, { color: c.text }]}>Reviews</Text>
-              <Pressable onPress={() => setComposerOpen(true)} hitSlop={8}>
-                <Text style={[styles.writeReview, { color: c.primary }]}>
-                  {myReview ? 'Edit yours' : 'Write one'}
-                </Text>
-              </Pressable>
-            </View>
-            {reviews.map((r, i) => (
-              <View
-                key={r.id}
-                style={[styles.rev, i > 0 ? { borderTopWidth: 1.5, borderTopColor: c.rowBorder } : null]}
-              >
-                <View style={styles.revHeadRow}>
-                  <Text style={[styles.who, { color: c.text }]}>
-                    {r.is_anonymous ? 'Anonymous' : r.display_name_snapshot ?? 'Someone'}
-                  </Text>
-                  {r.id !== myReview?.id ? (
-                    <Pressable onPress={() => onReviewOptions(r)} hitSlop={10}>
-                      <Ionicons name="ellipsis-horizontal" size={16} color={c.mutedOnCard} />
-                    </Pressable>
-                  ) : null}
-                </View>
-                <Text style={[styles.revText, { color: c.inkSecondary }]}>{r.body}</Text>
-              </View>
-            ))}
-          </View>
         )}
 
-        <Text style={[styles.attrib, { color: c.legal }]}>
-          Hygiene ratings © Crown copyright, Food Standards Agency, under the Open Government
-          Licence. Ratings reflect the last inspection.
-        </Text>
+        <Text style={[styles.attrib, { color: c.meta }]}>{FSA_ATTRIBUTION}</Text>
       </ScrollView>
 
-      <View style={styles.footer}>
-        <Pressable
-          style={[styles.footerBtn, styles.footerOutline, { backgroundColor: c.card, borderColor: c.primary }]}
-          onPress={onGetDirections}
-        >
-          <Ionicons name="navigate" size={18} color={c.primary} />
-          <Text style={[styles.footerBtnText, { color: c.primary }]}>Directions</Text>
-        </Pressable>
-        <EdgeButton
-          color={c.primary}
-          edgeColor={c.primaryDark}
-          edge={4}
-          radius={18}
-          onPress={() => setSaveOpen(true)}
-          containerStyle={{ flex: 1 }}
-          style={styles.footerBtnInner}
-        >
-          <Ionicons name="bookmark" size={18} color="#fff" />
-          <Text style={styles.footerBtnTextOnGreen}>Save</Text>
-        </EdgeButton>
-      </View>
+      <SaveToListModal
+        visible={saveOpen}
+        restaurantId={place.id}
+        onClose={() => {
+          setSaveOpen(false)
+          loadSocial()
+        }}
+      />
 
-      <SaveToListModal visible={saveOpen} restaurantId={id} onClose={() => setSaveOpen(false)} />
+      <LogVisitSheet
+        visible={logOpen}
+        place={place}
+        onClose={() => setLogOpen(false)}
+        onLogged={async (v) => {
+          setLogOpen(false)
+          setVisit(v)
+          setDinerCheckState(await getDinerCheck(place.id).catch(() => dinerCheck))
+        }}
+      />
 
       <ReviewComposer
         visible={composerOpen}
-        restaurantId={id}
+        restaurantId={place.id}
         existingReview={myReview}
         onClose={() => setComposerOpen(false)}
         onSaved={(review) => {
-          if (!myReview) recordReview() // game layer: first save only, edits don't recount
           setMyReview(review)
-          setReviews((prev) => {
-            const others = prev.filter((r) => r.id !== review.id)
-            return [review, ...others].sort(
-              (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-            )
-          })
+          setReviews((prev) => [review, ...prev.filter((r) => r.id !== review.id)])
           setComposerOpen(false)
         }}
         onDeleted={() => {
@@ -495,155 +533,70 @@ export default function RestaurantDetail() {
           setComposerOpen(false)
         }}
       />
-    </SafeAreaView>
+    </View>
   )
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
-  retryBtn: { marginTop: 10, paddingHorizontal: 24, paddingVertical: 13 },
-  navRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 6,
-    marginBottom: 10,
-  },
-  navBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  catPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    alignSelf: 'flex-start',
-    paddingVertical: 5,
-    paddingHorizontal: 11,
-    borderRadius: 999,
-    marginBottom: 9,
-  },
-  catDot: { width: 6, height: 6, borderRadius: 3 },
-  catText: { fontSize: 11.5, fontFamily: fonts.display600, letterSpacing: 1.2 },
-  name: { fontSize: 34, fontFamily: fonts.display800, letterSpacing: -0.7, lineHeight: 36 },
-  addr: { fontSize: 15, fontFamily: fonts.body, marginTop: 5 },
-  hero: { marginTop: 16, borderRadius: 24, padding: 18 },
-  heroTop: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  heroTile: {
-    width: 76,
-    height: 76,
-    borderRadius: 24,
-    backgroundColor: '#FFFDF7',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  heroNum: { fontSize: 44, fontFamily: fonts.display800 },
-  heroWord: { color: '#fff', fontSize: 26, fontFamily: fonts.display800 },
-  heroMeta: {
-    color: 'rgba(255,255,255,0.92)',
-    fontSize: 13.5,
-    fontFamily: fonts.body,
-    marginTop: 4,
-    lineHeight: 18,
-  },
-  scaleRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 5 },
-  scaleBar: { flex: 1, height: 8, borderRadius: 4 },
-  scaleLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
-  scaleLabel: { color: 'rgba(255,255,255,0.85)', fontSize: 11, fontFamily: fonts.bodyMedium },
-  statRow: { flexDirection: 'row', gap: 9, marginTop: 12 },
-  statCard: { flex: 1, borderRadius: 18, borderWidth: 1.5, paddingVertical: 12, paddingHorizontal: 13 },
-  statK: { fontSize: 10.5, fontFamily: fonts.display600, letterSpacing: 0.8, marginBottom: 6 },
-  statValueRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  openDot: { width: 8, height: 8, borderRadius: 4 },
-  statV: { fontSize: 16, fontFamily: fonts.display600 },
-  statSub: { fontSize: 12, fontFamily: fonts.body, marginTop: 3 },
-  hoursCard: { marginTop: 12, borderRadius: 20, borderWidth: 1.5, paddingVertical: 15, paddingHorizontal: 16 },
-  hoursHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  hoursTitle: { fontSize: 15.5, fontFamily: fonts.display600 },
-  hoursToday: { fontSize: 12.5, fontFamily: fonts.body },
-  hoursRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    marginHorizontal: -8,
-    marginBottom: 3,
-  },
-  hoursDay: { fontSize: 14, fontFamily: fonts.body },
-  hoursVal: { fontSize: 14, fontFamily: fonts.body },
-  reviewPrompt: {
-    marginTop: 12,
-    backgroundColor: '#F1E7D3',
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    borderRadius: 20,
-    paddingVertical: 15,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 13,
-  },
-  reviewPlus: {
-    width: 44,
+  heroNav: {
     height: 44,
-    borderRadius: 15,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
   },
-  reviewPromptTitle: { fontSize: 16, fontFamily: fonts.display600 },
-  reviewPromptSub: { fontSize: 13, fontFamily: fonts.body, marginTop: 2 },
-  reviewsCard: { marginTop: 12, borderRadius: 20, borderWidth: 1.5, paddingVertical: 15, paddingHorizontal: 16 },
+  // Brand title centred across the whole bar, behind the buttons.
+  brand: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    textAlign: 'center',
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  heroBody: { alignItems: 'center', gap: 8, paddingTop: 4, paddingHorizontal: 20 },
+  ratingWord: { fontSize: 15, fontWeight: '600' },
+  fsaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    height: 24,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+  },
+  fsaPillText: { fontSize: 12, fontWeight: '600' },
+  name: { fontSize: 27, fontWeight: '700', letterSpacing: -0.5, textAlign: 'center', marginTop: 2 },
+  meta: { fontSize: 15, textAlign: 'center' },
+  visitors: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
+  visitorsText: { fontSize: 14 },
+  actions: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingTop: 16 },
+  visitNote: { fontSize: 13, textAlign: 'center', marginTop: 8, paddingHorizontal: 24 },
+  week: { paddingHorizontal: 16, paddingBottom: 12, gap: 4 },
+  weekRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  weekText: { fontSize: 15 },
+  today: { fontWeight: '600', color: '#1C1C1E' },
+  weekSource: { fontSize: 12, marginTop: 4 },
   reviewsHead: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 4,
+    paddingLeft: 32,
+    paddingRight: 32,
+    paddingTop: 24,
+    paddingBottom: 8,
   },
-  writeReview: { fontSize: 13, fontFamily: fonts.display600 },
-  rev: { paddingVertical: 12 },
-  revHeadRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  who: { fontSize: 14.5, fontFamily: fonts.display600 },
-  revText: { fontSize: 14, fontFamily: fonts.body, marginTop: 3, lineHeight: 20 },
-  attrib: { fontSize: 11.5, fontFamily: fonts.body, lineHeight: 17, marginTop: 12 },
-  footer: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    flexDirection: 'row',
-    gap: 10,
-    paddingHorizontal: 20,
-    paddingTop: 14,
-    paddingBottom: 26,
-  },
-  footerBtn: {
-    flex: 1,
-    height: 56,
-    borderRadius: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  footerOutline: { borderWidth: 2 },
-  footerBtnInner: {
-    height: 56,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  footerBtnText: { fontSize: 16.5, fontFamily: fonts.display600 },
-  footerBtnTextOnGreen: { color: '#fff', fontSize: 16.5, fontFamily: fonts.display600 },
+  writeLink: { fontSize: 15, fontWeight: '600' },
+  reviewCard: { marginHorizontal: 16, backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14, paddingHorizontal: 16, gap: 8 },
+  reviewHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  reviewWho: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  anonAvatar: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  reviewName: { fontSize: 15, fontWeight: '600' },
+  reviewWhen: { fontSize: 13 },
+  followPill: { height: 28, paddingHorizontal: 12, borderRadius: 14, justifyContent: 'center' },
+  followPillText: { fontSize: 13, fontWeight: '600' },
+  reviewBody: { fontSize: 15, lineHeight: 21 },
+  attrib: { fontSize: 12, lineHeight: 17, paddingHorizontal: 32, marginTop: 24 },
 })

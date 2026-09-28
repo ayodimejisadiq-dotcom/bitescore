@@ -1,16 +1,39 @@
-// Bitescore design system — "hygiene score foodmap" redesign. Warm cream
-// surfaces, one saturated colour family (the FSA score scale), physical
-// tile shadows. Tokens follow the design handoff spec.
+// Bitescore design system — the iOS-native redesign. White cards on the
+// system grouped background, system greys, and one green accent. The FSA
+// score scale is the only saturated colour; hero areas use a soft tint of it.
 
-export const brand = {
-  primary: '#046A38',
-  primaryDark: '#02522B',
-  primaryTint: '#E4EEDC',
+export const palette = {
+  // Accent
+  tint: '#047B42', // buttons, links, active tab
+  tintPressed: '#035E33',
+  tintSoft: '#E3F1E8', // soft green fill: follow pills, "+" button, visited state
+  tintDisabled: '#A8CDB8',
+
+  // Surfaces
+  bg: '#F2F2F7', // system grouped background
+  fill: '#E4E4EA', // search field, segmented control
+  card: '#FFFFFF',
+
+  // Text
+  label: '#1C1C1E',
+  label2: '#3C3C43', // secondary label
+  meta: '#8E8E93', // tertiary label, section headers, placeholders
+
+  // Lines & controls
+  separator: '#E5E5EA',
+  chevron: '#C7C7CC', // chevrons, inactive bits, "matches" bar
+  tabBorder: '#D1D1D6',
+
+  // Status
+  success: '#248A3D',
+  switchOn: '#34C759', // iOS switch, "cleaner" bar
+  blue: '#0A84FF', // location
+  danger: '#E24B29',
 }
 
-// FSA score scale — the only saturated colours in the app. `fill` is the
-// badge/pin colour, `edge` the dark bottom-edge shadow that makes badges
-// read as physical tiles.
+export type Palette = typeof palette
+
+// FSA score scale. `fill` is the badge/pin colour.
 export const scoreFill: Record<string, string> = {
   '5': '#046A38',
   '4': '#5EA632',
@@ -20,61 +43,58 @@ export const scoreFill: Record<string, string> = {
   '0': '#C0362C',
 }
 
-export const scoreEdge: Record<string, string> = {
-  '5': '#02522B',
-  '4': '#4A8626',
-  '3': '#D18C0C',
-  '2': '#CF6412',
-  '1': '#C13A1C',
-  '0': '#9E2A22',
+// Soft tint behind hero areas, and the darker tone used for text on it.
+const heroTint: Record<string, string> = {
+  '5': '#E3F1E8',
+  '4': '#EAF3E1',
+  '3': '#FCF0DA',
+  '2': '#FDEBDD',
+  '1': '#FBE4DE',
+  '0': '#F8E1DF',
+}
+
+const heroText: Record<string, string> = {
+  '5': '#046A38',
+  '4': '#3F7A1E',
+  '3': '#8A5A00',
+  '2': '#A04A0E',
+  '1': '#A8321A',
+  '0': '#8E231C',
 }
 
 // Non-numeric ratings (Exempt, AwaitingInspection, …) render neutral.
-export const NEUTRAL_RATING = '#B4AE9A'
+export const NEUTRAL_RATING = '#AEAEB2'
 
 export function colorForRating(rating: string): string {
   return scoreFill[rating] ?? NEUTRAL_RATING
 }
 
-export function edgeForRating(rating: string): string {
-  return scoreEdge[rating] ?? '#9A947F'
+// 3 is the one score light enough to need dark text.
+export function textOnRating(rating: string): string {
+  return rating === '3' ? '#1C1C1E' : '#FFFFFF'
 }
 
-// Kept for compatibility with older call sites.
-export const ratingColor = scoreFill
-
-export const palette = {
-  // Surfaces
-  bg: '#F7F2E7', // canvas
-  card: '#FFFDF7',
-  border: '#E7DFCC', // card border
-  rowBorder: '#EBE3D1', // list-row card border, slightly lighter
-  controlBorder: '#E4DBC8', // search bar & filter chips
-  dashedBorder: '#D9CFB5',
-  dashedBorderDark: '#C9C0A9',
-  subtleFill: '#F0EDE0', // secondary button, today-row pill, progress track
-  lockedFill: '#EDE7D8',
-
-  // Text
-  text: '#17170F', // ink — also used as the dark-card fill
-  inkSecondary: '#5B584B',
-  subtext: '#7A7768', // muted, on canvas
-  mutedOnCard: '#8B8775',
-  placeholder: '#9D9884',
-  disabled: '#B4AE9A',
-  onDarkMuted: '#A9A594',
-  legal: '#A29D8A',
-  chipText: '#3F3D33',
-
-  // Accents
-  accent: '#E2552B', // ember — streak, "changed" flag, add-review CTA
-  accentDark: '#C0431F',
-  openNow: '#3F7C1F',
-  goldRing: '#F1C34A',
-  userDot: '#2C7BE5',
-  star: '#F2A31C',
-
-  ...brand,
+export function heroTintForRating(rating: string): string {
+  return heroTint[rating] ?? '#EFEFF4'
 }
 
-export type Palette = typeof palette
+export function heroTextForRating(rating: string): string {
+  return heroText[rating] ?? '#636366'
+}
+
+// Initials avatars until people upload photos. Picked by hashing the user id,
+// so the same person is always the same colour.
+const AVATAR_TINTS: { bg: string; fg: string }[] = [
+  { bg: '#FFE1D1', fg: '#A0461C' },
+  { bg: '#DCE8FF', fg: '#2A5BB8' },
+  { bg: '#F1E3FF', fg: '#7A3DB8' },
+  { bg: '#FFF1C9', fg: '#8A6400' },
+  { bg: '#DDF3F0', fg: '#1E7A6E' },
+  { bg: '#FFE0E6', fg: '#B0324F' },
+]
+
+export function avatarTint(id: string): { bg: string; fg: string } {
+  let h = 0
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0
+  return AVATAR_TINTS[Math.abs(h) % AVATAR_TINTS.length]
+}

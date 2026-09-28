@@ -4,9 +4,10 @@ import { useTheme } from '@/theme/useTheme'
 import { Button } from './ui'
 import { sendLoginCode, verifyLoginCode } from '@/lib/auth'
 import { errorMessage } from '@/lib/errors'
+import { supabase } from '@/lib/supabase'
 
-// Sign back into an existing account (one that has an email) with a 6-digit
-// code. Without this, a reinstall or a new phone always starts a fresh
+// Sign back into an existing account (one that has an email) from an email
+// link (see lib/authLink.ts), or a code if the email template shows one. Without this, a reinstall or a new phone always starts a fresh
 // anonymous account, and anything tied to the old one — lists, and a
 // RevenueCat grant or purchase keyed to that user id — is out of reach.
 //
@@ -37,6 +38,15 @@ export function EmailSignIn({
   const [stage, setStage] = useState<'email' | 'code'>('email')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // The link signs the app in from outside this sheet, so close it then.
+  useEffect(() => {
+    if (!visible) return
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN' || event === 'USER_UPDATED') onClose()
+    })
+    return () => data.subscription.unsubscribe()
+  }, [visible, onClose])
 
   useEffect(() => {
     if (!visible) return
@@ -84,8 +94,8 @@ export function EmailSignIn({
         <View style={styles.body}>
           <Text style={[styles.lead, { color: c.label2 }]}>
             {stage === 'email'
-              ? 'Enter the email on your Bitescore account. We’ll send you a 6-digit code.'
-              : `Enter the 6-digit code we sent to ${email.trim()}.`}
+              ? 'Enter the email on your Bitescore account. We’ll email you a sign-in link.'
+              : `We emailed a sign-in link to ${email.trim()}. Open it on this phone and Bitescore will sign you in. If the email shows a code instead, enter it below.`}
           </Text>
           <View style={styles.card}>
             {stage === 'email' ? (
@@ -106,7 +116,7 @@ export function EmailSignIn({
             ) : (
               <TextInput
                 value={code}
-                onChangeText={(t) => setCode(t.replace(/\D/g, '').slice(0, 6))}
+                onChangeText={(t) => setCode(t.replace(/\D/g, '').slice(0, 10))}
                 placeholder="123456"
                 placeholderTextColor={c.meta}
                 keyboardType="number-pad"
@@ -121,10 +131,10 @@ export function EmailSignIn({
           {note && stage === 'email' ? <Text style={[styles.note, { color: c.meta }]}>{note}</Text> : null}
           <View style={{ marginTop: 20, gap: 4 }}>
             {stage === 'email' ? (
-              <Button label="Send code" onPress={send} loading={busy} disabled={!email.trim()} />
+              <Button label="Email me a link" onPress={send} loading={busy} disabled={!email.trim()} />
             ) : (
               <>
-                <Button label="Sign in" onPress={verify} loading={busy} disabled={code.length !== 6} />
+                <Button label="Sign in" onPress={verify} loading={busy} disabled={code.length < 6} />
                 <Button label="Use a different email" variant="plain" size="medium" onPress={() => setStage('email')} />
               </>
             )}

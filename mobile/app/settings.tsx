@@ -225,7 +225,9 @@ function EmailUpgrade() {
         </>
       ) : (
         <>
-          <Text style={[styles.hint, { color: c.meta }]}>Enter the 6-digit code sent to {email}</Text>
+          <Text style={[styles.hint, { color: c.meta }]}>
+            We emailed a confirmation link to {email}. Open it on this phone to finish. If the email shows a code instead, enter it here.
+          </Text>
           <TextInput
             value={code}
             onChangeText={setCode}

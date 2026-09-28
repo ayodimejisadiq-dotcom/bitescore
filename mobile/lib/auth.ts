@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { AUTH_REDIRECT } from './authLink'
 
 // Anonymous-first auth: the app signs a user in anonymously on first launch
 // (see ensureSession, called from the root layout) so lists/reviews/saves
@@ -28,7 +29,7 @@ export async function ensureSession(): Promise<void> {
 export async function sendLoginCode(email: string): Promise<void> {
   const { error } = await supabase.auth.signInWithOtp({
     email: email.trim(),
-    options: { shouldCreateUser: false },
+    options: { shouldCreateUser: false, emailRedirectTo: AUTH_REDIRECT },
   })
   if (error) throw error
 }
@@ -45,7 +46,7 @@ export async function verifyLoginCode(email: string, token: string): Promise<voi
 // --- Upgrading the current (possibly anonymous) session with an email ------
 
 export async function startEmailUpgrade(email: string): Promise<void> {
-  const { error } = await supabase.auth.updateUser({ email: email.trim() })
+  const { error } = await supabase.auth.updateUser({ email: email.trim() }, { emailRedirectTo: AUTH_REDIRECT })
   if (error) throw error
 }
 

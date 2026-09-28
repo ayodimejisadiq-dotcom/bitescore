@@ -43,7 +43,8 @@ export function LogVisitSheet({
       if (!me || place.lat == null || place.lng == null) return
       const d = metersBetween(me, { lat: place.lat, lng: place.lng })
       setDistance(d)
-      setMethod(d <= VERIFY_RADIUS_M * 2 ? 'here' : 'none')
+      // Only suggest verifying when it can actually pass the server's check.
+      setMethod(d <= VERIFY_RADIUS_M ? 'here' : 'none')
     })
   }, [visible, place.lat, place.lng])
 

@@ -438,7 +438,7 @@ revoke execute on function public.notify_candidates(uuid) from public, anon, aut
 -- Visits
 -- ---------------------------------------------------------------------------
 create table if not exists public.visits (
-  id            uuid primary key default uuid_generate_v4(),
+  id            uuid primary key default gen_random_uuid(),
   user_id       uuid not null default auth.uid() references auth.users(id) on delete cascade,
   restaurant_id uuid not null references public.restaurants(id) on delete cascade,
   visited_at    timestamptz not null default now(),

@@ -331,6 +331,9 @@ export default function RestaurantDetail() {
         {/* Hero, in a soft tint of the score colour */}
         <View style={{ backgroundColor: heroTintForRating(place.rating_value), paddingTop: insets.top, paddingBottom: 22 }}>
           <View style={styles.heroNav}>
+            <Text style={[styles.brand, { color: c.label }]} pointerEvents="none" accessibilityRole="header">
+              Bitescore
+            </Text>
             <HeroIconButton icon="chevron-back" label="Back" onPress={() => router.back()} />
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <HeroIconButton
@@ -543,6 +546,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
+  },
+  // Brand title centred across the whole bar, behind the buttons.
+  brand: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    textAlign: 'center',
+    fontSize: 17,
+    fontWeight: '600',
   },
   heroBody: { alignItems: 'center', gap: 8, paddingTop: 4, paddingHorizontal: 20 },
   ratingWord: { fontSize: 15, fontWeight: '600' },

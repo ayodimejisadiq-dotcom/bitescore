@@ -222,7 +222,7 @@ const styles = StyleSheet.create({
   tasteBody: { fontSize: 14, lineHeight: 20, marginTop: 3 },
   card: { marginHorizontal: 16, backgroundColor: '#FFFFFF', borderRadius: 14, overflow: 'hidden' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingLeft: 16 },
-  rowBody: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12, paddingRight: 16 },
+  rowBody: { flex: 1, minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12, paddingRight: 16 },
   rowTitle: { flex: 1, fontSize: 16, fontWeight: '600' },
   agree: { fontSize: 13 },
   reviewCard: { marginHorizontal: 16, backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14, paddingHorizontal: 16 },

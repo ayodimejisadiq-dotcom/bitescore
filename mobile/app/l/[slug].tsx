@@ -152,7 +152,7 @@ const styles = StyleSheet.create({
   counts: { fontSize: 15, marginTop: 6 },
   preview: { alignSelf: 'stretch', marginTop: 28, borderRadius: 16, paddingVertical: 4 },
   previewRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 14 },
-  previewBody: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingRight: 14 },
+  previewBody: { flex: 1, minHeight: 56, flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingRight: 14 },
   previewName: { flex: 1, fontSize: 16, fontWeight: '500' },
   footer: { paddingHorizontal: 20, gap: 6 },
 })

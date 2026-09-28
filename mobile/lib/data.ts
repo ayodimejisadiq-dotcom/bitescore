@@ -102,7 +102,8 @@ export async function fetchNear(
   return (data ?? []) as RestaurantNear[]
 }
 
-// Text search by business name or postcode prefix, nearest first. Same filters
+// Text search by business name, name + town ("nandos croydon") or postcode
+// prefix; the server ranks whole-name matches first, nearest first. Same filters
 // as the map/near-me queries apply here too, for consistency with FilterChips.
 //
 // Origin is optional: without location permission there is nothing to measure

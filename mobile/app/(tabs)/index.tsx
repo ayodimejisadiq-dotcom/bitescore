@@ -467,7 +467,7 @@ export default function MapScreen() {
           <TextInput
             value={searchQuery}
             onChangeText={onSearchChange}
-            placeholder="Restaurant, street or postcode"
+            placeholder="Restaurant, town or postcode"
             placeholderTextColor={c.meta}
             autoCapitalize="none"
             autoCorrect={false}

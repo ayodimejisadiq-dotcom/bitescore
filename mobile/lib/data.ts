@@ -3,7 +3,18 @@ import { generateUsername, sanitizeUsername } from './username'
 import {
   EMPTY_FILTERS,
   type BrowseFilters,
-  type ListWithItems,
+  type DinerCheckSummary,
+  type FollowRow,
+  type ListAccess,
+  type ListDetail,
+  type ListInvite,
+  type ListSummary,
+  type PersonCard,
+  type ProfileSummary,
+  type PublicList,
+  type TasteMatch,
+  type UserReview,
+  type Verdict,
   type PlaceLookupResult,
   type Restaurant,
   type RestaurantCluster,
@@ -13,6 +24,9 @@ import {
 } from './types'
 
 const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL
+
+// Share links point at the server's /l and /u pages, which open the app.
+const SHARE_HOST = SERVER_URL ?? 'https://bitescore.vercel.app'
 
 export interface Bounds {
   minLng: number
@@ -137,13 +151,9 @@ export async function lookupPlaceData(restaurantId: string): Promise<PlaceLookup
 }
 
 export async function getReviews(restaurantId: string): Promise<Review[]> {
-  const { data, error } = await supabase
-    .from('reviews')
-    .select('*')
-    .eq('restaurant_id', restaurantId)
-    .eq('status', 'visible')
-    .order('created_at', { ascending: false })
-    .limit(50)
+  // Through an RPC rather than the table: it hides who wrote anonymous
+  // reviews and joins the author's public name.
+  const { data, error } = await supabase.rpc('restaurant_reviews', { p_restaurant_id: restaurantId })
   if (error) throw error
   return (data ?? []) as Review[]
 }
@@ -224,16 +234,10 @@ export async function reportReview(reviewId: string): Promise<{ alreadyReported:
   return { alreadyReported: false }
 }
 
-// Hides this user's reviews from the current user going forward (RLS on
-// `reviews` excludes blocked authors from reviews_read_visible).
-export async function blockUser(userId: string): Promise<void> {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) throw new Error('Not signed in')
-  const { error } = await supabase
-    .from('user_blocks')
-    .upsert({ blocker_id: user.id, blocked_id: userId }, { onConflict: 'blocker_id,blocked_id' })
+// Hides this review's author from the current user going forward. Works on
+// anonymous reviews without the app ever learning who wrote them.
+export async function blockReviewAuthor(reviewId: string): Promise<void> {
+  const { error } = await supabase.rpc('block_review_author', { p_review_id: reviewId })
   if (error) throw error
 }
 
@@ -241,22 +245,63 @@ export async function blockUser(userId: string): Promise<void> {
 // Lists
 // ---------------------------------------------------------------------------
 
-export async function fetchMyLists(): Promise<ListWithItems[]> {
+export async function fetchMyLists(): Promise<ListSummary[]> {
+  const { data, error } = await supabase.rpc('my_lists')
+  if (error) throw error
+  return (data ?? []) as ListSummary[]
+}
+
+export async function getListDetail(listId: string): Promise<ListDetail | null> {
+  const { data, error } = await supabase.rpc('list_detail', { p_list_id: listId })
+  if (error) throw error
+  return (data as ListDetail) ?? null
+}
+
+export async function getListBySlug(slug: string): Promise<ListInvite | null> {
+  const { data, error } = await supabase.rpc('list_by_slug', { p_slug: slug })
+  if (error) throw error
+  return (data as ListInvite) ?? null
+}
+
+export async function joinList(slug: string, role: 'editor' | 'viewer'): Promise<string> {
+  const { data, error } = await supabase.rpc('join_list', { p_slug: slug, p_role: role })
+  if (error) throw error
+  return data as string
+}
+
+export async function inviteToList(listId: string, userId: string): Promise<void> {
+  const { error } = await supabase.rpc('invite_to_list', { p_list_id: listId, p_user_id: userId })
+  if (error) throw error
+}
+
+export async function leaveList(listId: string): Promise<void> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not signed in')
+  const { error } = await supabase.from('list_members').delete().eq('list_id', listId).eq('user_id', user.id)
+  if (error) throw error
+}
+
+export async function removeListMember(listId: string, userId: string): Promise<void> {
+  const { error } = await supabase.from('list_members').delete().eq('list_id', listId).eq('user_id', userId)
+  if (error) throw error
+}
+
+// Changing access to invited/link mints a share link server-side; going
+// private removes it (see lists_manage_slug in migration 0021).
+export async function updateListSharing(
+  listId: string,
+  patch: { access?: ListAccess; collaborators_can_add?: boolean },
+): Promise<{ access: ListAccess; share_slug: string | null; collaborators_can_add: boolean }> {
   const { data, error } = await supabase
     .from('lists')
-    .select(
-      'id,name,created_at,list_items(restaurant_id,restaurants(id,name,business_type,rating_value,rating_is_numeric,address,postcode))',
-    )
-    .order('created_at', { ascending: true })
+    .update(patch)
+    .eq('id', listId)
+    .select('access,share_slug,collaborators_can_add')
+    .single()
   if (error) throw error
-  return (data ?? []).map((l: any) => ({
-    id: l.id,
-    name: l.name,
-    created_at: l.created_at,
-    items: (l.list_items ?? [])
-      .map((li: any) => li.restaurants)
-      .filter(Boolean),
-  }))
+  return data as { access: ListAccess; share_slug: string | null; collaborators_can_add: boolean }
 }
 
 export async function createList(name: string): Promise<string> {
@@ -284,9 +329,16 @@ export async function deleteList(listId: string): Promise<void> {
 }
 
 export async function addToList(listId: string, restaurantId: string): Promise<void> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not signed in')
   const { error } = await supabase
     .from('list_items')
-    .upsert({ list_id: listId, restaurant_id: restaurantId }, { onConflict: 'list_id,restaurant_id' })
+    .upsert(
+      { list_id: listId, restaurant_id: restaurantId, added_by: user.id },
+      { onConflict: 'list_id,restaurant_id', ignoreDuplicates: true },
+    )
   if (error) throw error
 }
 
@@ -299,14 +351,167 @@ export async function removeFromList(listId: string, restaurantId: string): Prom
   if (error) throw error
 }
 
-// Which of the current user's lists already contain this restaurant.
-export async function listIdsContaining(restaurantId: string): Promise<Set<string>> {
+// Which of the given lists already contain this restaurant. Scoped to the
+// caller's own lists: RLS also lets anyone read public link-only lists, which
+// must not show up as "saved".
+export async function listIdsContaining(restaurantId: string, listIds: string[]): Promise<Set<string>> {
+  if (listIds.length === 0) return new Set()
   const { data, error } = await supabase
     .from('list_items')
     .select('list_id')
     .eq('restaurant_id', restaurantId)
+    .in('list_id', listIds)
   if (error) throw error
   return new Set((data ?? []).map((r) => r.list_id as string))
+}
+
+export function shareUrl(slug: string): string {
+  return `${SHARE_HOST}/l/${slug}`
+}
+
+export function profileUrl(userId: string): string {
+  return `${SHARE_HOST}/u/${userId}`
+}
+
+// ---------------------------------------------------------------------------
+// Visits & diner checks
+// ---------------------------------------------------------------------------
+
+export async function logVisit(
+  restaurantId: string,
+  method: 'location' | 'none',
+  coords?: { lng: number; lat: number },
+): Promise<{ id: string; verified: boolean; visited_at: string }> {
+  const { data, error } = await supabase.rpc('log_visit', {
+    p_restaurant_id: restaurantId,
+    p_method: method,
+    p_lng: coords?.lng ?? null,
+    p_lat: coords?.lat ?? null,
+  })
+  if (error) throw error
+  return data as { id: string; verified: boolean; visited_at: string }
+}
+
+export async function undoVisitToday(visitId: string): Promise<void> {
+  const { error } = await supabase.from('visits').delete().eq('id', visitId)
+  if (error) throw error
+}
+
+export async function myVisitToday(
+  restaurantId: string,
+): Promise<{ id: string; verified: boolean; visited_at: string } | null> {
+  const { data, error } = await supabase
+    .from('visits')
+    .select('id,verified,visited_at,visit_date')
+    .eq('restaurant_id', restaurantId)
+    .order('visited_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) return null
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
+  return data.visit_date === today ? data : null
+}
+
+export async function getDinerCheck(restaurantId: string): Promise<DinerCheckSummary> {
+  const { data, error } = await supabase.rpc('diner_check_summary', { p_restaurant_id: restaurantId })
+  if (error) throw error
+  return data as DinerCheckSummary
+}
+
+export async function setDinerCheck(restaurantId: string, verdict: Verdict | null): Promise<void> {
+  const { error } = await supabase.rpc('set_diner_check', {
+    p_restaurant_id: restaurantId,
+    p_verdict: verdict,
+  })
+  if (error) throw error
+}
+
+export async function getFollowedVisitors(
+  restaurantId: string,
+): Promise<{ total: number; people: PersonCard[] }> {
+  const { data, error } = await supabase.rpc('followed_visitors', { p_restaurant_id: restaurantId })
+  if (error) throw error
+  return (data as { total: number; people: PersonCard[] }) ?? { total: 0, people: [] }
+}
+
+// Server errors raised by log_visit / set_diner_check, in plain words.
+export function visitErrorMessage(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String((e as { message?: string })?.message ?? e)
+  if (msg.includes('too_far')) return 'You need to be at the venue to log a verified visit.'
+  if (msg.includes('daily_visit_cap')) return 'You’ve logged the most visits allowed for today.'
+  if (msg.includes('venue_has_no_location')) return 'We don’t have a location for this place, so it can’t be verified.'
+  if (msg.includes('needs_verified_visit')) return 'Log a verified visit first to add your diner check.'
+  return 'Check your connection and try again.'
+}
+
+// ---------------------------------------------------------------------------
+// People & following
+// ---------------------------------------------------------------------------
+
+export async function getProfileSummary(userId: string): Promise<ProfileSummary | null> {
+  const { data, error } = await supabase.rpc('profile_summary', { p_user_id: userId })
+  if (error) throw error
+  return (data as ProfileSummary) ?? null
+}
+
+export async function getFollowList(userId: string, kind: 'followers' | 'following'): Promise<FollowRow[]> {
+  const { data, error } = await supabase.rpc('follow_list', { p_user_id: userId, p_kind: kind })
+  if (error) throw error
+  return (data ?? []) as FollowRow[]
+}
+
+export async function follow(userId: string): Promise<void> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not signed in')
+  const { error } = await supabase
+    .from('follows')
+    .upsert({ follower_id: user.id, followee_id: userId }, { onConflict: 'follower_id,followee_id', ignoreDuplicates: true })
+  if (error) throw error
+}
+
+export async function unfollow(userId: string): Promise<void> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not signed in')
+  const { error } = await supabase.from('follows').delete().eq('follower_id', user.id).eq('followee_id', userId)
+  if (error) throw error
+}
+
+// Which of these people I follow, for Follow pills on review rows.
+export async function followingSet(userIds: string[]): Promise<Set<string>> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user || userIds.length === 0) return new Set()
+  const { data, error } = await supabase
+    .from('follows')
+    .select('followee_id')
+    .eq('follower_id', user.id)
+    .in('followee_id', userIds)
+  if (error) throw error
+  return new Set((data ?? []).map((r) => r.followee_id as string))
+}
+
+export async function getTasteMatch(otherId: string): Promise<TasteMatch> {
+  const { data, error } = await supabase.rpc('taste_match', { p_other: otherId })
+  if (error) throw error
+  return data as TasteMatch
+}
+
+export async function getPublicLists(userId: string): Promise<PublicList[]> {
+  const { data, error } = await supabase.rpc('public_lists', { p_user_id: userId })
+  if (error) throw error
+  return (data ?? []) as PublicList[]
+}
+
+export async function getUserReviews(userId: string): Promise<UserReview[]> {
+  const { data, error } = await supabase.rpc('user_reviews', { p_user_id: userId })
+  if (error) throw error
+  return (data ?? []) as UserReview[]
 }
 
 // ---------------------------------------------------------------------------
@@ -317,6 +522,8 @@ export interface Profile {
   first_name: string | null
   last_name: string | null
   username: string | null
+  public_name: string | null
+  city: string | null
 }
 
 export async function getProfile(): Promise<Profile | null> {
@@ -326,7 +533,7 @@ export async function getProfile(): Promise<Profile | null> {
   if (!user) return null
   const { data, error } = await supabase
     .from('profiles')
-    .select('first_name,last_name,username')
+    .select('first_name,last_name,username,public_name,city')
     .eq('user_id', user.id)
     .maybeSingle()
   if (error) throw error
@@ -362,6 +569,24 @@ export async function setUsername(username: string): Promise<void> {
   if (!clean) throw new Error('Enter a username')
   const { error } = await supabase.from('profiles').update({ username: clean }).eq('user_id', user.id)
   if (error) throw error
+}
+
+// What other people see: an optional public name and city.
+export async function savePublicProfile(publicName: string, city: string): Promise<void> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not signed in')
+  const { error } = await supabase
+    .from('profiles')
+    .update({ public_name: publicName.trim() || null, city: city.trim() || null })
+    .eq('user_id', user.id)
+  if (error) throw error
+}
+
+export async function currentUserId(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession()
+  return data.session?.user.id ?? null
 }
 
 // ---------------------------------------------------------------------------

@@ -1,54 +1,53 @@
 import { Tabs } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useTheme } from '@/theme/useTheme'
-import { fonts } from '@/theme/type'
 
+// Explore, Lists, Profile. Filled icons when active, outlines otherwise.
 export default function TabsLayout() {
   const c = useTheme()
+  const insets = useSafeAreaInsets()
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: c.primary,
-        tabBarInactiveTintColor: c.placeholder,
+        tabBarActiveTintColor: c.tint,
+        tabBarInactiveTintColor: c.meta,
         tabBarStyle: {
-          backgroundColor: c.card,
-          borderTopColor: c.border,
-          borderTopWidth: 1.5,
-          height: 88,
-          paddingTop: 8,
+          position: 'absolute',
+          backgroundColor: 'rgba(250,250,252,0.94)',
+          borderTopColor: c.tabBorder,
+          borderTopWidth: 0.5,
+          height: 50 + insets.bottom,
+          paddingTop: 7,
         },
-        tabBarLabelStyle: { fontFamily: fonts.display600, fontSize: 12 },
+        tabBarLabelStyle: { fontSize: 10.5, fontWeight: '500' },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Map',
-          tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons name={focused ? 'map' : 'map-outline'} size={size} color={color} />
+          title: 'Explore',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'map' : 'map-outline'} size={26} color={color} />
           ),
         }}
-      />
-      <Tabs.Screen
-        name="search"
-        options={{ href: null }}
       />
       <Tabs.Screen
         name="lists"
         options={{
           title: 'Lists',
-          tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons name={focused ? 'bookmark' : 'bookmark-outline'} size={size} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'bookmark' : 'bookmark-outline'} size={26} color={color} />
           ),
         }}
       />
       <Tabs.Screen
-        name="account"
+        name="profile"
         options={{
-          title: 'Account',
-          tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons name={focused ? 'person' : 'person-outline'} size={size} color={color} />
+          title: 'Profile',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'person' : 'person-outline'} size={26} color={color} />
           ),
         }}
       />

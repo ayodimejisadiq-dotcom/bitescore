@@ -19,7 +19,6 @@ import {
   type PurchasesPackage,
 } from 'react-native-purchases'
 import { useTheme } from '@/theme/useTheme'
-import { fonts } from '@/theme/type'
 import {
   getOfferings,
   getStorefrontCountry,
@@ -30,7 +29,7 @@ import {
 } from '@/lib/purchases'
 import { PRIVACY_POLICY_URL, TERMS_OF_USE_URL } from '@/lib/legal'
 import { errorMessage } from '@/lib/errors'
-import { EdgeButton } from './ui'
+import { Button } from './ui'
 import { BadgeFan } from './BadgeFan'
 
 // Native paywall built directly on the default RevenueCat Offering, rather
@@ -303,11 +302,11 @@ export function PaywallGate({
           <View style={styles.fan}>
             <BadgeFan />
           </View>
-          <View style={[styles.proPill, { backgroundColor: c.text }]}>
+          <View style={[styles.proPill, { backgroundColor: c.label }]}>
             <Text style={[styles.proPillText, { color: HERO_BG }]}>BITESCORE PRO</Text>
           </View>
-          <Text style={[styles.title, { color: c.text }]}>Know before you eat</Text>
-          <Text style={[styles.subtitle, { color: c.text }]}>
+          <Text style={[styles.title, { color: c.label }]}>Know before you eat</Text>
+          <Text style={[styles.subtitle, { color: c.label }]}>
             Official UK hygiene ratings, wherever you're eating.
           </Text>
         </View>
@@ -315,18 +314,18 @@ export function PaywallGate({
         <View style={styles.benefits}>
           {BENEFITS.map((b) => (
             <View key={b.title} style={styles.benefit}>
-              <View style={[styles.benefitIcon, { backgroundColor: c.primaryTint }]}>
-                <Ionicons name={b.icon} size={20} color={c.primary} />
+              <View style={[styles.benefitIcon, { backgroundColor: c.tintSoft }]}>
+                <Ionicons name={b.icon} size={20} color={c.tint} />
               </View>
               <View style={styles.benefitText}>
-                <Text style={[styles.benefitTitle, { color: c.text }]}>{b.title}</Text>
-                <Text style={[styles.benefitBody, { color: c.inkSecondary }]}>{b.body}</Text>
+                <Text style={[styles.benefitTitle, { color: c.label }]}>{b.title}</Text>
+                <Text style={[styles.benefitBody, { color: c.label2 }]}>{b.body}</Text>
               </View>
             </View>
           ))}
           <View style={styles.source}>
-            <Ionicons name="checkmark-circle" size={15} color={c.mutedOnCard} />
-            <Text style={[styles.sourceText, { color: c.mutedOnCard }]}>
+            <Ionicons name="checkmark-circle" size={15} color={c.meta} />
+            <Text style={[styles.sourceText, { color: c.meta }]}>
               Ratings from the Food Standards Agency
             </Text>
           </View>
@@ -342,13 +341,13 @@ export function PaywallGate({
         {packages === null && loadError === null ? (
           <View style={styles.plans}>
             {[0, 1].map((i) => (
-              <View key={i} style={[styles.planSkeleton, { backgroundColor: c.subtleFill }]} />
+              <View key={i} style={[styles.planSkeleton, { backgroundColor: c.bg }]} />
             ))}
           </View>
         ) : loadError !== null ? (
-          <View style={[styles.errorBox, { backgroundColor: c.subtleFill }]}>
-            <Ionicons name="cloud-offline-outline" size={22} color={c.subtext} />
-            <Text style={[styles.errorText, { color: c.inkSecondary }]}>{loadError}</Text>
+          <View style={[styles.errorBox, { backgroundColor: c.bg }]}>
+            <Ionicons name="cloud-offline-outline" size={22} color={c.meta} />
+            <Text style={[styles.errorText, { color: c.label2 }]}>{loadError}</Text>
           </View>
         ) : (
           <View style={styles.plans}>
@@ -372,38 +371,38 @@ export function PaywallGate({
                   style={[
                     styles.plan,
                     {
-                      backgroundColor: active ? c.primaryTint : c.card,
-                      borderColor: active ? c.primary : c.controlBorder,
+                      backgroundColor: active ? c.tintSoft : c.card,
+                      borderColor: active ? c.tint : c.separator,
                     },
                   ]}
                 >
                   {badge ? (
-                    <View style={[styles.badge, { backgroundColor: c.primary }]}>
+                    <View style={[styles.badge, { backgroundColor: c.tint }]}>
                       <Text style={styles.badgeText}>{badge.toUpperCase()}</Text>
                     </View>
                   ) : null}
                   <View
                     style={[
                       styles.radio,
-                      { borderColor: active ? c.primary : c.dashedBorderDark },
-                      active && { backgroundColor: c.primary },
+                      { borderColor: active ? c.tint : c.chevron },
+                      active && { backgroundColor: c.tint },
                     ]}
                   >
                     {active ? <Ionicons name="checkmark" size={14} color="#fff" /> : null}
                   </View>
                   <View style={styles.planBody}>
-                    <Text style={[styles.planName, { color: c.text }]} numberOfLines={1}>
+                    <Text style={[styles.planName, { color: c.label }]} numberOfLines={1}>
                       {planName(pkg)}
                     </Text>
-                    <Text style={[styles.planDetail, { color: c.mutedOnCard }]} numberOfLines={1}>
+                    <Text style={[styles.planDetail, { color: c.meta }]} numberOfLines={1}>
                       {planDetail(pkg, fmt)}
                     </Text>
                   </View>
                   <View style={styles.planPriceCol}>
-                    <Text style={[styles.planPrice, { color: c.text }]}>
+                    <Text style={[styles.planPrice, { color: c.label }]}>
                       {fmt(pkg.product.price, pkg)}
                     </Text>
-                    <Text style={[styles.planSuffix, { color: c.mutedOnCard }]}>
+                    <Text style={[styles.planSuffix, { color: c.meta }]}>
                       {priceSuffix(pkg)}
                     </Text>
                   </View>
@@ -413,36 +412,26 @@ export function PaywallGate({
           </View>
         )}
 
-        <EdgeButton
-          color={c.primary}
-          edgeColor={c.primaryDark}
-          edge={4}
-          radius={18}
-          disabled={loadError === null && (buying || !selectedPkg)}
+        <Button
+          label={loadError !== null ? 'Try again' : selectedTrial ? 'Start free trial' : 'Continue'}
+          disabled={loadError === null && !selectedPkg}
+          loading={buying}
           onPress={loadError !== null ? load : onBuy}
           style={styles.cta}
-        >
-          {buying ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.ctaText}>
-              {loadError !== null ? 'Try again' : selectedTrial ? 'Start free trial' : 'Continue'}
-            </Text>
-          )}
-        </EdgeButton>
+        />
 
         {selectedPkg ? (
           <>
             <View style={styles.reassure}>
-              <Ionicons name="shield-checkmark" size={14} color={c.primary} />
-              <Text style={[styles.reassureText, { color: c.inkSecondary }]}>
+              <Ionicons name="shield-checkmark" size={14} color={c.tint} />
+              <Text style={[styles.reassureText, { color: c.label2 }]}>
                 {isAutoRenewing(selectedPkg)
                   ? 'Cancel anytime in Settings'
                   : 'One-time payment · No subscription'}
               </Text>
             </View>
             {isAutoRenewing(selectedPkg) ? (
-              <Text style={[styles.fineprint, { color: c.legal }]}>
+              <Text style={[styles.fineprint, { color: c.meta }]}>
                 {selectedTrial
                   ? `${selectedTrial[0].toUpperCase()}${selectedTrial.slice(1)}, then `
                   : ''}
@@ -457,8 +446,8 @@ export function PaywallGate({
         ) : null}
 
         {identityFailed ? (
-          <View style={[styles.notice, { backgroundColor: c.subtleFill }]}>
-            <Text style={[styles.noticeText, { color: c.inkSecondary }]}>
+          <View style={[styles.notice, { backgroundColor: c.bg }]}>
+            <Text style={[styles.noticeText, { color: c.label2 }]}>
               We couldn't check your account just now, so this screen may be showing in error. If
               you've already bought Bitescore, tap Restore.
             </Text>
@@ -468,18 +457,18 @@ export function PaywallGate({
         <View style={styles.legalRow}>
           <Pressable onPress={onRestore} disabled={restoring} hitSlop={8}>
             {restoring ? (
-              <ActivityIndicator size="small" color={c.subtext} />
+              <ActivityIndicator size="small" color={c.meta} />
             ) : (
-              <Text style={[styles.legalLink, { color: c.subtext }]}>Restore</Text>
+              <Text style={[styles.legalLink, { color: c.meta }]}>Restore</Text>
             )}
           </Pressable>
-          <Text style={[styles.legalDot, { color: c.dashedBorderDark }]}>·</Text>
+          <Text style={[styles.legalDot, { color: c.chevron }]}>·</Text>
           <Pressable onPress={() => Linking.openURL(TERMS_OF_USE_URL)} hitSlop={8}>
-            <Text style={[styles.legalLink, { color: c.subtext }]}>Terms</Text>
+            <Text style={[styles.legalLink, { color: c.meta }]}>Terms</Text>
           </Pressable>
-          <Text style={[styles.legalDot, { color: c.dashedBorderDark }]}>·</Text>
+          <Text style={[styles.legalDot, { color: c.chevron }]}>·</Text>
           <Pressable onPress={() => Linking.openURL(PRIVACY_POLICY_URL)} hitSlop={8}>
-            <Text style={[styles.legalLink, { color: c.subtext }]}>Privacy</Text>
+            <Text style={[styles.legalLink, { color: c.meta }]}>Privacy</Text>
           </Pressable>
         </View>
       </View>
@@ -501,17 +490,17 @@ const styles = StyleSheet.create({
   // BadgeFan reserves headroom for the raised centre tile; trim it here.
   fan: { marginTop: -22, marginBottom: -6 },
   proPill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, marginBottom: 10 },
-  proPillText: { fontSize: 11, fontFamily: fonts.display800, letterSpacing: 1.2 },
+  proPillText: { fontSize: 11, fontWeight: '700', letterSpacing: 1.2 },
   title: {
     fontSize: 32,
     lineHeight: 36,
-    fontFamily: fonts.display800,
+    fontWeight: '700',
     letterSpacing: -1,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 15,
-    fontFamily: fonts.bodyMedium,
+    fontWeight: '500',
     textAlign: 'center',
     lineHeight: 21,
     marginTop: 6,
@@ -527,8 +516,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   benefitText: { flex: 1 },
-  benefitTitle: { fontSize: 15.5, fontFamily: fonts.display600 },
-  benefitBody: { fontSize: 13.5, fontFamily: fonts.body, lineHeight: 18, marginTop: 1 },
+  benefitTitle: { fontSize: 15.5, fontWeight: '600' },
+  benefitBody: { fontSize: 13.5, fontWeight: '400', lineHeight: 18, marginTop: 1 },
   source: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -536,7 +525,7 @@ const styles = StyleSheet.create({
     gap: 6,
     marginTop: 6,
   },
-  sourceText: { fontSize: 12.5, fontFamily: fonts.bodyMedium },
+  sourceText: { fontSize: 12.5, fontWeight: '500' },
   footer: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
@@ -564,7 +553,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 3,
   },
-  badgeText: { color: '#fff', fontSize: 10.5, fontFamily: fonts.display800, letterSpacing: 0.6 },
+  badgeText: { color: '#fff', fontSize: 10.5, fontWeight: '700', letterSpacing: 0.6 },
   radio: {
     width: 22,
     height: 22,
@@ -574,11 +563,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   planBody: { flex: 1 },
-  planName: { fontSize: 16, fontFamily: fonts.display600 },
-  planDetail: { fontSize: 12.5, fontFamily: fonts.body, marginTop: 2 },
+  planName: { fontSize: 16, fontWeight: '600' },
+  planDetail: { fontSize: 12.5, fontWeight: '400', marginTop: 2 },
   planPriceCol: { alignItems: 'flex-end' },
-  planPrice: { fontSize: 19, fontFamily: fonts.display800 },
-  planSuffix: { fontSize: 12, fontFamily: fonts.body, marginTop: 1 },
+  planPrice: { fontSize: 19, fontWeight: '700' },
+  planSuffix: { fontSize: 12, fontWeight: '400', marginTop: 1 },
   errorBox: {
     borderRadius: 18,
     paddingVertical: 16,
@@ -586,9 +575,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  errorText: { fontSize: 14, fontFamily: fonts.body, lineHeight: 20, textAlign: 'center' },
+  errorText: { fontSize: 14, fontWeight: '400', lineHeight: 20, textAlign: 'center' },
   cta: { height: 56, alignItems: 'center', justifyContent: 'center', marginTop: 14 },
-  ctaText: { color: '#fff', fontSize: 17, fontFamily: fonts.display600 },
+  ctaText: { color: '#fff', fontSize: 17, fontWeight: '600' },
   reassure: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -596,8 +585,8 @@ const styles = StyleSheet.create({
     gap: 6,
     marginTop: 10,
   },
-  reassureText: { fontSize: 13, fontFamily: fonts.bodyMedium },
-  fineprint: { fontSize: 10, fontFamily: fonts.body, lineHeight: 13, textAlign: 'center', marginTop: 6 },
+  reassureText: { fontSize: 13, fontWeight: '500' },
+  fineprint: { fontSize: 10, fontWeight: '400', lineHeight: 13, textAlign: 'center', marginTop: 6 },
   notice: {
     marginTop: 12,
     alignSelf: 'stretch',
@@ -615,5 +604,5 @@ const styles = StyleSheet.create({
     minHeight: 20,
   },
   legalDot: { fontSize: 13 },
-  legalLink: { fontSize: 13, fontFamily: fonts.display600 },
+  legalLink: { fontSize: 13, fontWeight: '600' },
 })

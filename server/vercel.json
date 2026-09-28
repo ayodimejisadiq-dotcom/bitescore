@@ -20,6 +20,14 @@
     {
       "source": "/support",
       "destination": "/api/support"
+    },
+    {
+      "source": "/l/:key",
+      "destination": "/api/open?kind=l&key=:key"
+    },
+    {
+      "source": "/u/:key",
+      "destination": "/api/open?kind=u&key=:key"
     }
   ],
   "crons": [

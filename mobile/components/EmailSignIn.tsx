@@ -84,8 +84,8 @@ export function EmailSignIn({
         <View style={styles.body}>
           <Text style={[styles.lead, { color: c.label2 }]}>
             {stage === 'email'
-              ? 'Enter the email on your Bitescore account. We’ll send you a 6-digit code.'
-              : `Enter the 6-digit code we sent to ${email.trim()}.`}
+              ? 'Enter the email on your Bitescore account. We’ll email you a sign-in code.'
+              : `Enter the code we emailed to ${email.trim()}.`}
           </Text>
           <View style={styles.card}>
             {stage === 'email' ? (
@@ -106,7 +106,7 @@ export function EmailSignIn({
             ) : (
               <TextInput
                 value={code}
-                onChangeText={(t) => setCode(t.replace(/\D/g, '').slice(0, 6))}
+                onChangeText={(t) => setCode(t.replace(/\D/g, '').slice(0, 10))}
                 placeholder="123456"
                 placeholderTextColor={c.meta}
                 keyboardType="number-pad"
@@ -124,7 +124,7 @@ export function EmailSignIn({
               <Button label="Send code" onPress={send} loading={busy} disabled={!email.trim()} />
             ) : (
               <>
-                <Button label="Sign in" onPress={verify} loading={busy} disabled={code.length !== 6} />
+                <Button label="Sign in" onPress={verify} loading={busy} disabled={code.length < 6} />
                 <Button label="Use a different email" variant="plain" size="medium" onPress={() => setStage('email')} />
               </>
             )}

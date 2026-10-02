@@ -113,16 +113,19 @@ export async function searchRestaurants(
   query: string,
   filters: BrowseFilters = EMPTY_FILTERS,
   origin?: { lng: number; lat: number } | null,
+  signal?: AbortSignal,
 ): Promise<RestaurantNear[]> {
   const q = query.trim()
   if (!q) return []
-  const { data, error } = await supabase.rpc('search_restaurants_near', {
+  let call = supabase.rpc('search_restaurants_near', {
     q,
     origin_lng: origin?.lng ?? null,
     origin_lat: origin?.lat ?? null,
     types: filters.types,
     rating_values: toRatingValues(filters),
   })
+  if (signal) call = call.abortSignal(signal)
+  const { data, error } = await call
   if (error) throw error
   return (data ?? []) as RestaurantNear[]
 }

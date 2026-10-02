@@ -57,6 +57,8 @@ import { hoursForDay, openLabel, openState, todayIndexMon0 } from '@/lib/hours'
 import { lastKnownCoords } from '@/lib/location'
 import { displayName, distanceLabel, joinNames, metersBetween, shortName, timeAgo } from '@/lib/people'
 import { scheduleDirectionsFollowUp } from '@/lib/followups'
+import { usePlan } from '@/hooks/usePlan'
+import { claimFreePlace, freeLeft, resetsLabel, type FreePlanStatus } from '@/lib/plan'
 import type {
   DinerCheckSummary,
   Inspection,
@@ -80,11 +82,105 @@ function fullDate(date: string | null): string | null {
   return new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-export default function RestaurantDetail() {
+// Pro sees every place. On the free plan each new place this month counts
+// against the allowance; once it's used up, the place shows locked.
+export default function RestaurantScreen() {
+  const c = useTheme()
+  const { id } = useLocalSearchParams<{ id: string }>()
+  const plan = usePlan()
+  const [gate, setGate] = useState<'checking' | 'open' | 'locked'>(plan.isPro ? 'open' : 'checking')
+  const [claim, setClaim] = useState<FreePlanStatus | null>(null)
+  const { isPro, setFree } = plan
+
+  useEffect(() => {
+    if (isPro) {
+      setGate('open')
+      return
+    }
+    let live = true
+    setGate('checking')
+    claimFreePlace(id)
+      .then((r) => {
+        if (!live) return
+        setFree(r)
+        setClaim(r)
+        setGate(r.allowed ? 'open' : 'locked')
+      })
+      // Can't reach the server to count it: show the place rather than lock
+      // someone out over a network blip.
+      .catch(() => live && setGate('open'))
+    return () => {
+      live = false
+    }
+  }, [id, isPro, setFree])
+
+  if (gate === 'checking') {
+    return (
+      <View style={[styles.center, { backgroundColor: c.bg }]}>
+        <ActivityIndicator color={c.meta} />
+      </View>
+    )
+  }
+  if (gate === 'locked' && claim) return <LockedPlace id={id} status={claim} />
+  return <RestaurantDetail id={id} free={isPro ? null : claim} />
+}
+
+function LockedPlace({ id, status }: { id: string; status: FreePlanStatus }) {
   const c = useTheme()
   const router = useRouter()
   const insets = useSafeAreaInsets()
-  const { id } = useLocalSearchParams<{ id: string }>()
+  const [place, setPlace] = useState<Restaurant | null>(null)
+
+  useEffect(() => {
+    getRestaurant(id).then(setPlace).catch(() => {})
+  }, [id])
+
+  return (
+    <View style={[styles.root, { backgroundColor: c.bg }]}>
+      <View
+        style={{
+          backgroundColor: heroTintForRating(place?.rating_value ?? ''),
+          paddingTop: insets.top,
+          paddingBottom: 28,
+        }}
+      >
+        <View style={styles.heroNav}>
+          <Text style={[styles.brand, { color: c.label }]} pointerEvents="none" accessibilityRole="header">
+            Bitescore
+          </Text>
+          <HeroIconButton icon="chevron-back" label="Back" onPress={() => router.back()} />
+        </View>
+        <View style={styles.heroBody}>
+          {place ? <ScoreBadge rating={place.rating_value} size={88} glow /> : null}
+          <Text style={[styles.name, { color: c.label }]}>{place?.name ?? ' '}</Text>
+          {place?.address ? (
+            <Text style={[styles.meta, { color: c.label2 }]}>{place.address}</Text>
+          ) : null}
+        </View>
+      </View>
+      <View style={styles.locked}>
+        <Ionicons name="lock-closed" size={28} color={c.meta} />
+        <Text style={[styles.lockedTitle, { color: c.label }]}>
+          You've used your {status.free_limit} free places this month
+        </Text>
+        <Text style={[styles.lockedBody, { color: c.label2 }]}>
+          Get Pro for every place's full details, history and inspection scores, or come back on{' '}
+          {resetsLabel(status)}.
+        </Text>
+        <Button
+          label="Get Bitescore Pro"
+          onPress={() => router.push('/paywall?reason=limit')}
+          style={{ alignSelf: 'stretch', marginTop: 20 }}
+        />
+      </View>
+    </View>
+  )
+}
+
+function RestaurantDetail({ id, free }: { id: string; free: FreePlanStatus | null }) {
+  const c = useTheme()
+  const router = useRouter()
+  const insets = useSafeAreaInsets()
 
   const [place, setPlace] = useState<Restaurant | null>(null)
   const [loading, setLoading] = useState(true)
@@ -379,6 +475,19 @@ export default function RestaurantDetail() {
           </View>
         </View>
 
+        {free ? (
+          <Pressable
+            onPress={() => router.push('/paywall')}
+            style={[styles.freeBanner, { backgroundColor: c.card }]}
+            accessibilityRole="button"
+          >
+            <Text style={[styles.freeBannerText, { color: c.label2 }]}>
+              {freeLeft(free)} of {free.free_limit} free places left this month
+            </Text>
+            <Text style={[styles.freeBannerLink, { color: c.tint }]}>Get Pro</Text>
+          </Pressable>
+        ) : null}
+
         {/* Actions */}
         <View style={styles.actions}>
           <Button
@@ -554,6 +663,21 @@ export default function RestaurantDetail() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  locked: { alignItems: 'center', paddingHorizontal: 32, paddingTop: 32, gap: 8 },
+  lockedTitle: { fontSize: 20, fontWeight: '700', textAlign: 'center', marginTop: 6 },
+  lockedBody: { fontSize: 15, lineHeight: 21, textAlign: 'center' },
+  freeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: 16,
+    marginTop: 14,
+    paddingHorizontal: 14,
+    minHeight: 44,
+    borderRadius: 12,
+  },
+  freeBannerText: { fontSize: 14, flex: 1 },
+  freeBannerLink: { fontSize: 14, fontWeight: '600' },
   heroNav: {
     height: 44,
     flexDirection: 'row',

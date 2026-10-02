@@ -63,8 +63,8 @@ const DISPLAY_ORDER: Partial<Record<PACKAGE_TYPE, number>> = {
 const BENEFITS: { icon: keyof typeof Ionicons.glyphMap; title: string; body: string }[] = [
   {
     icon: 'shield-checkmark',
-    title: 'Every rating, everywhere',
-    body: 'Official scores for every place near you.',
+    title: 'Every place, no limit',
+    body: 'Full details, history and inspection scores for every place.',
   },
   {
     icon: 'notifications',
@@ -205,6 +205,10 @@ export function PaywallGate({
   onUnlocked,
   userId,
   identityFailed = false,
+  freeLimit,
+  onContinueFree,
+  onClose,
+  notice,
 }: {
   onUnlocked: () => void
   // Present so the paywall can re-attempt the RevenueCat login itself.
@@ -212,6 +216,13 @@ export function PaywallGate({
   // True when we could not confirm which customer we're acting as, so
   // "not entitled" may be wrong. Someone who has genuinely paid can land here.
   identityFailed?: boolean
+  // The free plan's monthly allowance, offered as a way past the paywall.
+  freeLimit?: number
+  onContinueFree?: () => void
+  // Shown as a modal from inside the app (free plan): can be dismissed.
+  onClose?: () => void
+  // Why it opened, e.g. the free allowance ran out.
+  notice?: string
 }) {
   const c = useTheme()
   const insets = useSafeAreaInsets()
@@ -300,7 +311,18 @@ export function PaywallGate({
   return (
     <View style={[styles.root, { backgroundColor: c.bg }]}>
       <ScrollView contentContainerStyle={styles.scroll} bounces={false}>
-        <View style={[styles.hero, { paddingTop: insets.top + 20 }]}>
+        <View style={[styles.hero, { paddingTop: (onClose ? 16 : insets.top) + 20 }]}>
+          {onClose ? (
+            <Pressable
+              onPress={onClose}
+              hitSlop={10}
+              style={[styles.close, { top: 14 }]}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+            >
+              <Ionicons name="close" size={20} color={c.label} />
+            </Pressable>
+          ) : null}
           <View style={styles.fan}>
             <BadgeFan />
           </View>
@@ -311,6 +333,11 @@ export function PaywallGate({
           <Text style={[styles.subtitle, { color: c.label }]}>
             Official UK hygiene ratings, wherever you're eating.
           </Text>
+          {notice ? (
+            <View style={[styles.noticePill, { backgroundColor: 'rgba(255,255,255,0.7)' }]}>
+              <Text style={[styles.noticePillText, { color: c.label }]}>{notice}</Text>
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.benefits}>
@@ -447,6 +474,20 @@ export function PaywallGate({
           </>
         ) : null}
 
+        {onContinueFree && freeLimit ? (
+          <Pressable
+            onPress={onContinueFree}
+            hitSlop={6}
+            style={styles.freeRow}
+            accessibilityRole="button"
+          >
+            <Text style={[styles.freeText, { color: c.label2 }]}>
+              Not now · <Text style={{ color: c.tint, fontWeight: '600' }}>Continue free</Text>, {freeLimit}{' '}
+              places a month
+            </Text>
+          </Pressable>
+        ) : null}
+
         {identityFailed ? (
           <View style={[styles.notice, { backgroundColor: c.bg }]}>
             <Text style={[styles.noticeText, { color: c.label2 }]}>
@@ -499,6 +540,20 @@ const styles = StyleSheet.create({
   },
   // BadgeFan reserves headroom for the raised centre tile; trim it here.
   fan: { marginTop: -22, marginBottom: -6 },
+  close: {
+    position: 'absolute',
+    left: 16,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.6)',
+  },
+  noticePill: { marginTop: 14, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8 },
+  noticePillText: { fontSize: 14, fontWeight: '600', textAlign: 'center', lineHeight: 19 },
+  freeRow: { alignItems: 'center', paddingTop: 12 },
+  freeText: { fontSize: 15 },
   proPill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, marginBottom: 10 },
   proPillText: { fontSize: 11, fontWeight: '700', letterSpacing: 1.2 },
   title: {

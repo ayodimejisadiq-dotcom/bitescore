@@ -5,6 +5,9 @@
 --   update public.app_config set value = '10' where key = 'free_places_per_month';
 --   0 = no free plan; everyone without Pro sees the paywall, as before.
 --
+-- Production applied this one statement at a time (the batch kept timing
+-- out through the API); the result is the same as running this file.
+--
 -- A "place" is a distinct restaurant per calendar month (UK time): opening
 -- the same place again that month is free, and the count resets on the 1st.
 -- Pro users never call these; the app checks the store entitlement first.
@@ -39,6 +42,7 @@ create policy free_opens_read_own on public.free_opens
 create or replace function public.free_plan_limit()
 returns int
 language sql stable
+set search_path = public
 as $$
   select coalesce((select (value #>> '{}')::int from public.app_config
                    where key = 'free_places_per_month'), 0);
@@ -47,6 +51,7 @@ $$;
 create or replace function public.current_free_month()
 returns date
 language sql stable
+set search_path = public
 as $$
   select date_trunc('month', now() at time zone 'Europe/London')::date;
 $$;

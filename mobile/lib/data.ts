@@ -102,7 +102,8 @@ export async function fetchNear(
   return (data ?? []) as RestaurantNear[]
 }
 
-// Text search by business name or postcode prefix, nearest first. Same filters
+// Text search by business name, name + town ("nandos croydon") or postcode
+// prefix; the server ranks whole-name matches first, nearest first. Same filters
 // as the map/near-me queries apply here too, for consistency with FilterChips.
 //
 // Origin is optional: without location permission there is nothing to measure
@@ -112,16 +113,19 @@ export async function searchRestaurants(
   query: string,
   filters: BrowseFilters = EMPTY_FILTERS,
   origin?: { lng: number; lat: number } | null,
+  signal?: AbortSignal,
 ): Promise<RestaurantNear[]> {
   const q = query.trim()
   if (!q) return []
-  const { data, error } = await supabase.rpc('search_restaurants_near', {
+  let call = supabase.rpc('search_restaurants_near', {
     q,
     origin_lng: origin?.lng ?? null,
     origin_lat: origin?.lat ?? null,
     types: filters.types,
     rating_values: toRatingValues(filters),
   })
+  if (signal) call = call.abortSignal(signal)
+  const { data, error } = await call
   if (error) throw error
   return (data ?? []) as RestaurantNear[]
 }

@@ -26,6 +26,12 @@ import { fetchPins, fetchClusters, searchRestaurants, type Bounds } from '@/lib/
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { errorMessage, searchErrorMessage } from '@/lib/errors'
 import { RestaurantRow, categoryOne } from '@/components/RestaurantRow'
+import {
+  addRecentSearch,
+  clearRecentSearches,
+  getRecentSearches,
+  removeRecentSearch,
+} from '@/lib/recentSearches'
 import type { BrowseFilters, RestaurantCluster, RestaurantPin, RestaurantNear } from '@/lib/types'
 
 // Central London as a sensible default until we have the user's location.
@@ -196,6 +202,13 @@ export default function MapScreen() {
   const [searchLoading, setSearchLoading] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Typing fires a search per pause, and they can finish out of order: only
+  // the newest may write results, and starting one cancels the one before.
+  const searchSeq = useRef(0)
+  const searchAbort = useRef<AbortController | null>(null)
+  const [searchFocused, setSearchFocused] = useState(false)
+  const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [recentSearches, setRecentSearches] = useState<string[]>([])
   const [locationGranted, setLocationGranted] = useState(false)
   // Opens in heading mode: the app's job on launch is to orient you where you
   // are, and a north-up map makes you do that translation yourself. One drag
@@ -347,25 +360,85 @@ export default function MapScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtersLoaded])
 
+  useEffect(() => {
+    getRecentSearches().then(setRecentSearches)
+  }, [])
+
+  const cancelSearch = () => {
+    searchSeq.current++
+    searchAbort.current?.abort()
+    searchAbort.current = null
+    if (searchDebounce.current) clearTimeout(searchDebounce.current)
+    setSearchLoading(false)
+  }
+
+  const runSearch = async (text: string, f: BrowseFilters = filters) => {
+    cancelSearch()
+    const id = searchSeq.current
+    const abort = new AbortController()
+    searchAbort.current = abort
+    // A search the server hasn't answered in 8s won't be answered usefully;
+    // give up on it so the retry (or the message) comes promptly.
+    const timer = setTimeout(() => abort.abort(), 8000)
+    setSearchLoading(true)
+    try {
+      let results: RestaurantNear[]
+      try {
+        results = await searchRestaurants(text, f, originRef.current, abort.signal)
+      } catch (first) {
+        if (id !== searchSeq.current) return
+        // One quiet retry: a dropped connection or a slow first query on a
+        // cold server usually succeeds the second time.
+        console.warn('[bitescore] search retry', first)
+        const again = new AbortController()
+        searchAbort.current = again
+        clearTimeout(timer)
+        setTimeout(() => again.abort(), 8000)
+        results = await searchRestaurants(text, f, originRef.current, again.signal)
+      }
+      if (id !== searchSeq.current) return
+      setSearchResults(results)
+      setSearchError(null)
+    } catch (e) {
+      if (id !== searchSeq.current) return
+      setSearchError(searchErrorMessage(e))
+    } finally {
+      clearTimeout(timer)
+      if (id === searchSeq.current) setSearchLoading(false)
+    }
+  }
+
   const onSearchChange = (text: string) => {
     setSearchQuery(text)
     setSearchError(null)
-    if (searchDebounce.current) clearTimeout(searchDebounce.current)
     if (!text.trim()) {
+      cancelSearch()
       setSearchResults([])
       return
     }
-    searchDebounce.current = setTimeout(async () => {
-      setSearchLoading(true)
-      try {
-        setSearchResults(await searchRestaurants(text, filters, originRef.current))
-      } catch (e) {
-        setSearchError(searchErrorMessage(e))
-        setSearchResults([])
-      } finally {
-        setSearchLoading(false)
-      }
-    }, 300)
+    if (searchDebounce.current) clearTimeout(searchDebounce.current)
+    // Previous results stay on screen until the new ones arrive, so the list
+    // doesn't flash empty on every keystroke.
+    searchDebounce.current = setTimeout(() => runSearch(text), 300)
+  }
+
+  const clearSearch = () => {
+    cancelSearch()
+    setSearchQuery('')
+    setSearchResults([])
+    setSearchError(null)
+  }
+
+  const rememberSearch = (text: string) => {
+    addRecentSearch(text).then(setRecentSearches)
+  }
+
+  const pickRecent = (text: string) => {
+    setSearchQuery(text)
+    setSearchError(null)
+    setSearchResults([])
+    runSearch(text)
+    rememberSearch(text)
   }
 
   // Give markers a moment to rasterise after the set changes, then stop
@@ -432,6 +505,8 @@ export default function MapScreen() {
   const onFilters = (next: BrowseFilters) => {
     setFilters(next)
     load(regionRef.current, next)
+    // Open search results follow the filters too, not just the map.
+    if (searchQuery.trim()) runSearch(searchQuery, next)
   }
 
   // The tab bar floats over the map; controls sit just above it.
@@ -467,21 +542,31 @@ export default function MapScreen() {
           <TextInput
             value={searchQuery}
             onChangeText={onSearchChange}
-            placeholder="Restaurant, street or postcode"
+            placeholder="Restaurant, town or postcode"
             placeholderTextColor={c.meta}
             autoCapitalize="none"
             autoCorrect={false}
             returnKeyType="search"
+            onFocus={() => {
+              if (blurTimer.current) clearTimeout(blurTimer.current)
+              setSearchFocused(true)
+            }}
+            // Late, so a tap on a recent search lands before the list goes.
+            onBlur={() => {
+              blurTimer.current = setTimeout(() => setSearchFocused(false), 200)
+            }}
+            onSubmitEditing={() => {
+              if (!searchQuery.trim()) return
+              runSearch(searchQuery)
+              rememberSearch(searchQuery)
+            }}
             style={[styles.searchInput, { color: c.label }]}
           />
           {searchLoading ? (
             <ActivityIndicator size="small" color={c.meta} />
           ) : searchQuery ? (
             <Pressable
-              onPress={() => {
-                setSearchQuery('')
-                setSearchResults([])
-              }}
+              onPress={clearSearch}
               hitSlop={8}
               accessibilityLabel="Clear search"
             >
@@ -492,9 +577,15 @@ export default function MapScreen() {
         <FilterChips filters={filters} onChange={onFilters} />
         {searchQuery ? (
           searchError ? (
-            <View style={styles.banner}>
+            <Pressable
+              style={styles.banner}
+              onPress={() => runSearch(searchQuery)}
+              accessibilityRole="button"
+              accessibilityLabel="Try the search again"
+            >
               <Text style={[styles.bannerBody, { color: c.label2 }]}>{searchError}</Text>
-            </View>
+              <Text style={[styles.retry, { color: c.tint }]}>Try again</Text>
+            </Pressable>
           ) : (
             <View style={styles.results}>
               <FlatList
@@ -511,11 +602,58 @@ export default function MapScreen() {
                   ) : null
                 }
                 renderItem={({ item }) => (
-                  <RestaurantRow item={item} onPress={() => router.push(`/restaurant/${item.id}`)} />
+                  <RestaurantRow
+                    item={item}
+                    onPress={() => {
+                      rememberSearch(searchQuery)
+                      router.push(`/restaurant/${item.id}`)
+                    }}
+                  />
                 )}
               />
             </View>
           )
+        ) : searchFocused && recentSearches.length > 0 ? (
+          <View style={styles.results}>
+            <View style={styles.recentHead}>
+              <Text style={[styles.recentTitle, { color: c.label }]}>Recent</Text>
+              <Pressable
+                onPress={() => clearRecentSearches().then(setRecentSearches)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Clear recent searches"
+              >
+                <Text style={[styles.recentClear, { color: c.tint }]}>Clear</Text>
+              </Pressable>
+            </View>
+            <FlatList
+              data={recentSearches}
+              keyExtractor={(item) => item}
+              keyboardShouldPersistTaps="handled"
+              ItemSeparatorComponent={() => <View style={styles.recentSep} />}
+              renderItem={({ item }) => (
+                <Pressable
+                  onPress={() => pickRecent(item)}
+                  style={({ pressed }) => [styles.recentRow, pressed && { backgroundColor: c.bg }]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Search for ${item}`}
+                >
+                  <Ionicons name="time-outline" size={18} color={c.meta} />
+                  <Text style={[styles.recentText, { color: c.label }]} numberOfLines={1}>
+                    {item}
+                  </Text>
+                  <Pressable
+                    onPress={() => removeRecentSearch(item).then(setRecentSearches)}
+                    hitSlop={10}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Remove ${item} from recent searches`}
+                  >
+                    <Ionicons name="close" size={16} color={c.chevron} />
+                  </Pressable>
+                </Pressable>
+              )}
+            />
+          </View>
         ) : loading ? (
           <View style={styles.loading}>
             <ActivityIndicator size="small" color={c.meta} />
@@ -610,6 +748,26 @@ const styles = StyleSheet.create({
   },
   resultSep: { height: StyleSheet.hairlineWidth, backgroundColor: '#E5E5EA', marginLeft: 74 },
   noResults: { fontSize: 15, textAlign: 'center', padding: 20, lineHeight: 20 },
+  recentHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 6,
+  },
+  recentTitle: { fontSize: 15, fontWeight: '600' },
+  recentClear: { fontSize: 15 },
+  recentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    minHeight: 46,
+    paddingHorizontal: 16,
+  },
+  recentText: { flex: 1, fontSize: 16 },
+  recentSep: { height: StyleSheet.hairlineWidth, backgroundColor: '#E5E5EA', marginLeft: 46 },
+  retry: { fontSize: 15, fontWeight: '600', marginTop: 6 },
   pin: {
     width: 34,
     height: 34,

@@ -38,3 +38,16 @@ export function freeLeft(s: FreePlanStatus): number {
 export function resetsLabel(s: FreePlanStatus): string {
   return new Date(`${s.resets_on}T12:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })
 }
+
+// Whether the free plan needs Sign in with Apple first, so a reinstall can't
+// reset the monthly count (app_config.free_requires_sign_in). Off if unset
+// or unreadable: never block someone over a lookup.
+export async function getFreeRequiresSignIn(): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('app_config')
+    .select('value')
+    .eq('key', 'free_requires_sign_in')
+    .maybeSingle()
+  if (error || !data) return false
+  return data.value === true
+}

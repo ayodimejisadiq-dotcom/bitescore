@@ -26,11 +26,13 @@ import { errorMessage } from '@/lib/errors'
 import { PRIVACY_POLICY_URL, TERMS_OF_USE_URL } from '@/lib/legal'
 import { usePlan } from '@/hooks/usePlan'
 import { freeLeft } from '@/lib/plan'
+import { useAppleSignIn } from '@/components/AppleSignIn'
 
 export default function SettingsScreen() {
   const c = useTheme()
   const router = useRouter()
   const plan = usePlan()
+  const apple = useAppleSignIn()
   const { session } = useSession()
   const isAnonymous = Boolean((session?.user as { is_anonymous?: boolean } | undefined)?.is_anonymous)
   const email = session?.user?.email
@@ -109,6 +111,26 @@ export default function SettingsScreen() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={{ paddingTop: 16, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
           <SectionHeader>Account</SectionHeader>
+          {apple.available ? (
+            <>
+              <GroupedCard>
+                {apple.linked ? (
+                  <Row title="Sign in with Apple" value="Connected" />
+                ) : (
+                  <Row
+                    title={apple.busy ? 'Signing in…' : 'Sign in with Apple'}
+                    titleColor={c.tint}
+                    onPress={apple.busy ? undefined : () => apple.run()}
+                  />
+                )}
+              </GroupedCard>
+              {!apple.linked ? (
+                <SectionFooter>Keeps your lists, Pro and free places if you reinstall or change phone.</SectionFooter>
+              ) : (
+                <View style={{ height: 12 }} />
+              )}
+            </>
+          ) : null}
           {email ? (
             <GroupedCard>
               <Row title="Email" value={email} />

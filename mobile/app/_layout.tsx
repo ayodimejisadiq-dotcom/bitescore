@@ -15,7 +15,8 @@ import { routeForNotification, setupFollowUpCategory } from '@/lib/followups'
 import { handleAuthRedirect } from '@/lib/authLink'
 import { useTheme } from '@/theme/useTheme'
 import { PlanContext, type PlanState } from '@/hooks/usePlan'
-import { getFreePlanStatus, type FreePlanStatus } from '@/lib/plan'
+import { getFreePlanStatus, getFreeRequiresSignIn, type FreePlanStatus } from '@/lib/plan'
+import { useAppleSignIn } from '@/components/AppleSignIn'
 
 // Hold the native splash — the Bitescore logo — rather than letting it vanish
 // the instant the first frame is ready. Claimed at module scope so it happens
@@ -60,6 +61,11 @@ export default function RootLayout() {
   const [free, setFree] = useState<FreePlanStatus | null>(null)
   const [freeChecked, setFreeChecked] = useState(false)
   const [freeChosen, setFreeChosen] = useState<boolean | null>(null)
+  // The free plan can require Sign in with Apple (app_config), where the
+  // device offers it, so reinstalling doesn't hand out a fresh allowance.
+  const [freeNeedsSignIn, setFreeNeedsSignIn] = useState(false)
+  const apple = useAppleSignIn()
+  const signInRequired = freeNeedsSignIn && apple.available
   const router = useRouter()
 
   useEffect(() => {
@@ -137,7 +143,12 @@ export default function RootLayout() {
       setIdentityFailed(!identified)
       const pro = await getIsEntitled()
       if (!pro) {
-        setFree(await getFreePlanStatus().catch(() => null))
+        const [status, needsSignIn] = await Promise.all([
+          getFreePlanStatus().catch(() => null),
+          getFreeRequiresSignIn().catch(() => false),
+        ])
+        setFree(status)
+        setFreeNeedsSignIn(needsSignIn)
         setFreeChecked(true)
       }
       setEntitled(pro)
@@ -164,8 +175,9 @@ export default function RootLayout() {
   const stillChecking =
     sessionLoading ||
     freeChosen === null ||
-    (session && (entitled === null || (entitled === false && !freeChecked)))
-  const showPaywall = entitled === false && !(freeLimit > 0 && freeChosen)
+    (session && (entitled === null || (entitled === false && (!freeChecked || !apple.ready))))
+  const onFree = freeLimit > 0 && !!freeChosen && (!signInRequired || apple.linked)
+  const showPaywall = entitled === false && !onFree
 
   // Drop the splash only once the minimum has elapsed *and* there is something
   // real behind it — otherwise it would hand over to the spinner, which is a
@@ -188,9 +200,11 @@ export default function RootLayout() {
           identityFailed={identityFailed}
           onUnlocked={() => setEntitled(true)}
           freeLimit={freeLimit > 0 ? freeLimit : undefined}
+          freeNeedsAppleSignIn={signInRequired && !apple.linked}
           onContinueFree={
             freeLimit > 0
-              ? () => {
+              ? async () => {
+                  if (signInRequired && !apple.linked && !(await apple.run())) return
                   AsyncStorage.setItem(FREE_CHOSEN_KEY, '1').catch(() => {})
                   setFreeChosen(true)
                 }

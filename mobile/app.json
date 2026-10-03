@@ -3,7 +3,7 @@
     "name": "Bitescore",
     "slug": "bitescore",
     "scheme": "bitescore",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -22,7 +22,8 @@
       },
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Bitescore uses your location to show hygiene ratings for places to eat near you."
-      }
+      },
+      "usesAppleSignIn": true
     },
     "android": {
       "package": "com.bitescore.app",
@@ -45,7 +46,8 @@
       "expo-router",
       "expo-secure-store",
       "expo-location",
-      "expo-notifications"
+      "expo-notifications",
+      "expo-apple-authentication"
     ],
     "experiments": {
       "typedRoutes": false

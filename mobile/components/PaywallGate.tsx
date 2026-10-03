@@ -32,6 +32,7 @@ import { errorMessage } from '@/lib/errors'
 import { Button } from './ui'
 import { BadgeFan } from './BadgeFan'
 import { EmailSignIn } from './EmailSignIn'
+import { AppleSignInButton } from './AppleSignIn'
 
 // Native paywall built directly on the default RevenueCat Offering, rather
 // than the dashboard-configured RevenueCatUI paywall. App Review requires
@@ -207,6 +208,7 @@ export function PaywallGate({
   identityFailed = false,
   freeLimit,
   onContinueFree,
+  freeNeedsAppleSignIn = false,
   onClose,
   notice,
 }: {
@@ -219,6 +221,8 @@ export function PaywallGate({
   // The free plan's monthly allowance, offered as a way past the paywall.
   freeLimit?: number
   onContinueFree?: () => void
+  // The free plan starts with Sign in with Apple rather than a plain link.
+  freeNeedsAppleSignIn?: boolean
   // Shown as a modal from inside the app (free plan): can be dismissed.
   onClose?: () => void
   // Why it opened, e.g. the free allowance ran out.
@@ -474,7 +478,14 @@ export function PaywallGate({
           </>
         ) : null}
 
-        {onContinueFree && freeLimit ? (
+        {onContinueFree && freeLimit && freeNeedsAppleSignIn ? (
+          <View style={styles.freeApple}>
+            <Text style={[styles.freeText, { color: c.label2 }]}>
+              Or use Bitescore free, {freeLimit} places a month
+            </Text>
+            <AppleSignInButton onPress={onContinueFree} style={{ marginTop: 10 }} />
+          </View>
+        ) : onContinueFree && freeLimit ? (
           <Pressable
             onPress={onContinueFree}
             hitSlop={6}
@@ -553,6 +564,7 @@ const styles = StyleSheet.create({
   noticePill: { marginTop: 14, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8 },
   noticePillText: { fontSize: 14, fontWeight: '600', textAlign: 'center', lineHeight: 19 },
   freeRow: { alignItems: 'center', paddingTop: 12 },
+  freeApple: { alignItems: 'center', paddingTop: 16 },
   freeText: { fontSize: 15 },
   proPill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, marginBottom: 10 },
   proPillText: { fontSize: 11, fontWeight: '700', letterSpacing: 1.2 },

@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  Keyboard,
 } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import MapView, { Marker, type Region } from 'react-native-maps'
@@ -22,7 +23,8 @@ import { FilterChips } from '@/components/FilterChips'
 import { useFilters } from '@/hooks/useFilters'
 import { useUserHeading } from '@/hooks/useUserHeading'
 import { isNumericRating } from '@/lib/fsa'
-import { fetchPins, fetchClusters, searchRestaurants, type Bounds } from '@/lib/data'
+import { fetchPins, fetchClusters, fetchNear, searchRestaurants, type Bounds } from '@/lib/data'
+import { looksLikePostcode, postcodePoint, POSTCODE_SPAN, type PostcodePoint } from '@/lib/postcode'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { errorMessage, searchErrorMessage } from '@/lib/errors'
 import { RestaurantRow, categoryOne } from '@/components/RestaurantRow'
@@ -209,6 +211,9 @@ export default function MapScreen() {
   const [searchFocused, setSearchFocused] = useState(false)
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [recentSearches, setRecentSearches] = useState<string[]>([])
+  // Set when the search is a postcode: the map has moved there and the list
+  // shows what's around it.
+  const [postcodeHit, setPostcodeHit] = useState<PostcodePoint | null>(null)
   const [locationGranted, setLocationGranted] = useState(false)
   // Opens in heading mode: the app's job on launch is to orient you where you
   // are, and a north-up map makes you do that translation yourself. One drag
@@ -382,6 +387,25 @@ export default function MapScreen() {
     const timer = setTimeout(() => abort.abort(), 8000)
     setSearchLoading(true)
     try {
+      // A postcode is a place, not a name: go there and list what's around it.
+      // Postcodes with no restaurant registered at them (most homes) are
+      // located by their sector, so they still land in the right streets.
+      if (looksLikePostcode(text)) {
+        const point = await postcodePoint(text).catch(() => null)
+        if (id !== searchSeq.current) return
+        if (point) {
+          const span = POSTCODE_SPAN[point.level]
+          const near = await fetchNear({ lng: point.lng, lat: point.lat }, span.radiusM, f)
+          if (id !== searchSeq.current) return
+          showPostcode(point, f)
+          setPostcodeHit(point)
+          setSearchResults(near)
+          setSearchError(null)
+          return
+        }
+      }
+      setPostcodeHit(null)
+
       let results: RestaurantNear[]
       try {
         results = await searchRestaurants(text, f, originRef.current, abort.signal)
@@ -408,6 +432,29 @@ export default function MapScreen() {
     }
   }
 
+  // Moves the map onto a searched postcode and loads its pins. Drops out of
+  // follow mode first, or the camera would snap straight back to the user.
+  const showPostcode = (point: PostcodePoint, f: BrowseFilters) => {
+    setLocateMode('free')
+    const delta = POSTCODE_SPAN[point.level].delta
+    const region: Region = {
+      latitude: point.lat,
+      longitude: point.lng,
+      latitudeDelta: delta,
+      longitudeDelta: delta,
+    }
+    regionRef.current = region
+    mapRef.current?.animateToRegion(region, 500)
+    load(region, f)
+  }
+
+  // Closes the list so the map, already moved there, is in view.
+  const viewPostcodeOnMap = () => {
+    if (searchQuery.trim()) rememberSearch(searchQuery)
+    clearSearch()
+    Keyboard.dismiss()
+  }
+
   const onSearchChange = (text: string) => {
     setSearchQuery(text)
     setSearchError(null)
@@ -427,6 +474,7 @@ export default function MapScreen() {
     setSearchQuery('')
     setSearchResults([])
     setSearchError(null)
+    setPostcodeHit(null)
   }
 
   const rememberSearch = (text: string) => {
@@ -557,6 +605,11 @@ export default function MapScreen() {
             }}
             onSubmitEditing={() => {
               if (!searchQuery.trim()) return
+              // A postcode's map move has already happened; Search shows it.
+              if (postcodeHit) {
+                viewPostcodeOnMap()
+                return
+              }
               runSearch(searchQuery)
               rememberSearch(searchQuery)
             }}
@@ -593,8 +646,30 @@ export default function MapScreen() {
                 keyExtractor={(item) => item.id}
                 keyboardShouldPersistTaps="handled"
                 ItemSeparatorComponent={() => <View style={styles.resultSep} />}
+                ListHeaderComponent={
+                  postcodeHit ? (
+                    <Pressable
+                      onPress={viewPostcodeOnMap}
+                      style={({ pressed }) => [styles.postcodeRow, pressed && { backgroundColor: c.bg }]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Show ${postcodeHit.label} on the map`}
+                    >
+                      <Ionicons name="location" size={20} color={c.tint} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.postcodeTitle, { color: c.label }]}>
+                          {postcodeHit.label}
+                          {postcodeHit.area ? `, ${postcodeHit.area}` : ''}
+                        </Text>
+                        <Text style={[styles.postcodeSub, { color: c.meta }]}>
+                          {searchResults.length ? 'Places nearby below' : 'No rated places nearby'}
+                        </Text>
+                      </View>
+                      <Text style={[styles.postcodeLink, { color: c.tint }]}>Show map</Text>
+                    </Pressable>
+                  ) : null
+                }
                 ListEmptyComponent={
-                  !searchLoading ? (
+                  !searchLoading && !postcodeHit ? (
                     <Text style={[styles.noResults, { color: c.meta }]}>
                       No places found. New places can take a few weeks to appear after the council
                       registers them.
@@ -748,6 +823,18 @@ const styles = StyleSheet.create({
   },
   resultSep: { height: StyleSheet.hairlineWidth, backgroundColor: '#E5E5EA', marginLeft: 74 },
   noResults: { fontSize: 15, textAlign: 'center', padding: 20, lineHeight: 20 },
+  postcodeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    minHeight: 58,
+    paddingHorizontal: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E5EA',
+  },
+  postcodeTitle: { fontSize: 16, fontWeight: '600' },
+  postcodeSub: { fontSize: 13, marginTop: 1 },
+  postcodeLink: { fontSize: 15, fontWeight: '600' },
   recentHead: {
     flexDirection: 'row',
     alignItems: 'center',

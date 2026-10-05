@@ -32,11 +32,9 @@ function when(i: Inspection): string {
   if (i.rating_date) {
     return new Date(i.rating_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
   }
-  // Early ratings: we only know when they were replaced.
-  const until = i.seen_until
-    ? new Date(i.seen_until).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
-    : null
-  return until ? `Rated until ${until}` : 'Earlier inspection'
+  // Early ratings carry no inspection date. seen_until is only when we noticed
+  // the change, often weeks after the next inspection, so it isn't shown.
+  return 'Earlier inspection'
 }
 
 function hasScores(i: Inspection): boolean {

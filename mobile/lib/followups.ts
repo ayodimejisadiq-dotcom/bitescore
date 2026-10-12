@@ -50,7 +50,10 @@ export async function scheduleDirectionsFollowUp(place: { id: string; name: stri
   try {
     if (!(await canNotify())) return
     await setupFollowUpCategory()
-    await cancelDirectionsFollowUp(place.id)
+    // One reminder at a time, for the last place they got directions to:
+    // someone who checks five places and goes to the fifth should hear
+    // about the fifth, not get five notifications.
+    await cancelAllDirectionsFollowUps()
     const id = await Notifications.scheduleNotificationAsync({
       content: {
         title: `Did you visit ${place.name}?`,
@@ -60,9 +63,7 @@ export async function scheduleDirectionsFollowUp(place: { id: string; name: stri
       },
       trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: DELAY_SECONDS },
     })
-    const map = await readStore()
-    map[place.id] = id
-    await writeStore(map)
+    await writeStore({ [place.id]: id })
   } catch {
     // A missed reminder is not worth interrupting directions for.
   }
@@ -75,6 +76,19 @@ export async function cancelDirectionsFollowUp(restaurantId: string): Promise<vo
   await Notifications.cancelScheduledNotificationAsync(id).catch(() => {})
   delete map[restaurantId]
   await writeStore(map)
+}
+
+// Cancels every pending follow-up, found by what the OS has scheduled rather
+// than our own store, so reminders queued by older builds (one per place) are
+// cleared too.
+async function cancelAllDirectionsFollowUps(): Promise<void> {
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync().catch(() => [])
+  await Promise.all(
+    scheduled
+      .filter((n) => (n.content.data as { kind?: string } | undefined)?.kind === CATEGORY)
+      .map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier).catch(() => {})),
+  )
+  await writeStore({})
 }
 
 // Where a tapped notification should land, or null to stay put.

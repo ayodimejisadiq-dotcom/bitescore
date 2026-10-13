@@ -15,7 +15,7 @@ import { handleAuthRedirect } from '@/lib/authLink'
 import { useTheme } from '@/theme/useTheme'
 import { PlanContext, type PlanState } from '@/hooks/usePlan'
 import { Onboarding } from '@/components/Onboarding'
-import { getOnboardingAnswers, type OnboardingAnswers } from '@/lib/onboarding'
+import { getOnboardingAnswers, logOnboardingEvent, type OnboardingAnswers } from '@/lib/onboarding'
 
 // Hold the native splash — the Bitescore logo — rather than letting it vanish
 // the instant the first frame is ready. Claimed at module scope so it happens
@@ -123,6 +123,14 @@ export default function RootLayout() {
     })
   }, [])
 
+  // No session yet (first launch offline): keep trying, so the person isn't
+  // stuck on a paywall that can't attach a purchase to an account.
+  useEffect(() => {
+    if (sessionLoading || session) return
+    const t = setInterval(() => ensureSession().catch(() => {}), 5000)
+    return () => clearInterval(t)
+  }, [sessionLoading, session])
+
   // Links the RevenueCat customer to this Supabase user, then checks
   // entitlement — the whole app is gated behind the paywall until this
   // resolves true (see PaywallGate.tsx for the purchase/restore flow).
@@ -155,11 +163,19 @@ export default function RootLayout() {
   }, [])
 
   const stillChecking = sessionLoading || onboarding === null || (session && entitled === null)
-  const showPaywall = entitled === false
+  // Not knowing counts as not entitled. With no session (offline first
+  // launch) the entitlement can't be checked, and that used to fall through
+  // to the whole app for free.
+  const showPaywall = entitled !== true
   // Signing back in from the wizard's first screen re-reads the entitlement;
   // a returning Pro user then skips the rest of it.
   const showOnboarding = showPaywall && onboarding === 'pending'
   const answers = onboarding !== 'pending' ? onboarding : null
+  const atPaywall = !stillChecking && showPaywall && !showOnboarding
+
+  useEffect(() => {
+    if (atPaywall) logOnboardingEvent('paywall')
+  }, [atPaywall])
 
   // Drop the splash only once the minimum has elapsed *and* there is something
   // real behind it — otherwise it would hand over to the spinner, which is a
@@ -182,7 +198,10 @@ export default function RootLayout() {
         <PaywallGate
           userId={session?.user.id}
           identityFailed={identityFailed}
-          onUnlocked={() => setEntitled(true)}
+          onUnlocked={() => {
+            logOnboardingEvent('unlocked')
+            setEntitled(true)
+          }}
           notice={readyNotice(answers)}
         />
       ) : (

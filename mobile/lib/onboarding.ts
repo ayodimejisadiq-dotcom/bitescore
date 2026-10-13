@@ -1,6 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Location from 'expo-location'
 import { supabase } from './supabase'
+import { fetchNear } from './data'
+import { lastKnownCoords } from './location'
+import { EMPTY_FILTERS, type RestaurantNear } from './types'
 
 // First-launch wizard (components/Onboarding.tsx): permissions, a few
 // questions, then the paywall. Finishing it is remembered on the device, so it
@@ -128,4 +131,62 @@ export async function saveCity(city: string): Promise<void> {
     .update({ city: city.trim().slice(0, 60) || null })
     .eq('user_id', user.id)
   if (error) throw error
+}
+
+// One row per wizard step reached, for the drop-off funnel
+// (onboarding_funnel(), migration 0033). Fire-and-forget: tracking never
+// holds anyone up, and an offline first launch simply isn't counted.
+export function logOnboardingEvent(step: string): void {
+  supabase
+    .from('onboarding_events')
+    .insert({ step })
+    .then(({ error }) => {
+      if (error) console.warn('[bitescore] onboarding event', step, error.message)
+    })
+}
+
+export interface NearbySnapshot {
+  // "near you", or the city they typed when location is off.
+  where: string
+  total: number
+  // restaurants_near returns at most 100 rows.
+  capped: boolean
+  // Scored 0–2, worst first.
+  low: RestaurantNear[]
+  // Nearest places scoring 5.
+  best: RestaurantNear[]
+}
+
+const NEARBY_RADIUS_M = 1609 // a mile
+const NEARBY_MAX = 100
+
+// What's around them, for the reveal just before the paywall: from the
+// phone's location if allowed, else from the city they typed. Null when
+// neither gives a place to look.
+export async function nearbySnapshot(city: string): Promise<NearbySnapshot | null> {
+  let origin = await lastKnownCoords()
+  let where = 'near you'
+  if (!origin && city.trim()) {
+    try {
+      const [hit] = await Location.geocodeAsync(`${city.trim()}, United Kingdom`)
+      if (hit) {
+        origin = { lat: hit.latitude, lng: hit.longitude }
+        where = `in ${city.trim()}`
+      }
+    } catch {
+      // Geocoding unavailable; no reveal.
+    }
+  }
+  if (!origin) return null
+  const rows = await fetchNear(origin, NEARBY_RADIUS_M, EMPTY_FILTERS)
+  const numeric = rows.filter((r) => r.rating_is_numeric)
+  return {
+    where,
+    total: rows.length,
+    capped: rows.length >= NEARBY_MAX,
+    low: numeric
+      .filter((r) => Number(r.rating_value) <= 2)
+      .sort((a, b) => Number(a.rating_value) - Number(b.rating_value)),
+    best: numeric.filter((r) => r.rating_value === '5').slice(0, 2),
+  }
 }

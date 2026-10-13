@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  ActivityIndicator,
   Animated,
   KeyboardAvoidingView,
   Platform,
@@ -17,26 +18,31 @@ import * as Notifications from 'expo-notifications'
 import { useTheme } from '@/theme/useTheme'
 import { registerForPushNotifications } from '@/lib/push'
 import { sanitizeUsername } from '@/lib/username'
+import { distanceLabel } from '@/lib/people'
 import {
   FOOD_OPTIONS,
   UsernameTakenError,
   cityFromLocation,
+  logOnboardingEvent,
   markOnboarded,
+  nearbySnapshot,
   saveCity,
   saveFoodLikes,
   saveNameAndUsername,
+  type NearbySnapshot,
   type OnboardingAnswers,
 } from '@/lib/onboarding'
 import { Button } from './ui'
 import { BadgeFan } from './BadgeFan'
+import { ScoreBadge } from './ScoreBadge'
 import { EmailSignIn } from './EmailSignIn'
 
-// First-launch wizard: welcome, location, notifications, city, food, name —
-// then the root layout shows the paywall. Every question can be skipped, and
-// a failed save never stops anyone getting through: the answers are
-// personalisation, not a gate.
+// First-launch wizard: welcome, location, notifications, city, food, name,
+// then a look at the real scores around them — and the root layout shows the
+// paywall. Every question can be skipped, and a failed save never stops anyone
+// getting through: the answers are personalisation, not a gate.
 
-const STEPS = ['welcome', 'location', 'notifications', 'city', 'food', 'name'] as const
+const STEPS = ['welcome', 'location', 'notifications', 'city', 'food', 'name', 'nearby'] as const
 type Step = (typeof STEPS)[number]
 
 // Brand yellow from the logo, icon and splash.
@@ -82,6 +88,7 @@ export function Onboarding({ onDone }: { onDone: (answers: OnboardingAnswers) =>
   const [num, setNum] = useState(suffix)
   const [customUsername, setCustomUsername] = useState<string | null>(null)
   const [nameError, setNameError] = useState<string | null>(null)
+  const [nearby, setNearby] = useState<NearbySnapshot | 'loading' | null>('loading')
 
   const username = customUsername ?? suggestUsername(name, num)
 
@@ -91,6 +98,10 @@ export function Onboarding({ onDone }: { onDone: (answers: OnboardingAnswers) =>
     anim.setValue(0)
     Animated.timing(anim, { toValue: 1, duration: 260, useNativeDriver: true }).start()
   }, [stepIndex, anim])
+
+  useEffect(() => {
+    logOnboardingEvent(step)
+  }, [step])
 
   const next = () => setStepIndex((i) => Math.min(i + 1, STEPS.length - 1))
   const back = () => setStepIndex((i) => Math.max(i - 1, 0))
@@ -105,7 +116,10 @@ export function Onboarding({ onDone }: { onDone: (answers: OnboardingAnswers) =>
     setBusy(true)
     try {
       const { status } = await Location.requestForegroundPermissionsAsync()
-      if (status === 'granted') prefillCity()
+      if (status === 'granted') {
+        logOnboardingEvent('location_on')
+        prefillCity()
+      }
     } catch {
       // Carry on either way; the map asks again when it needs it.
     } finally {
@@ -118,6 +132,7 @@ export function Onboarding({ onDone }: { onDone: (answers: OnboardingAnswers) =>
     setBusy(true)
     try {
       const result = await registerForPushNotifications()
+      if (result.ok) logOnboardingEvent('notifications_on')
       // No session yet (offline first launch): still ask, so the token can
       // be registered on a later save.
       if (!result.ok && result.reason === 'not-signed-in') await Notifications.requestPermissionsAsync()
@@ -137,9 +152,12 @@ export function Onboarding({ onDone }: { onDone: (answers: OnboardingAnswers) =>
     })
   }
 
-  const finish = async () => {
+  // Leaving the name step: saves everything answered so far, then shows
+  // what's nearby. Skipping the name keeps the placeholder username the
+  // account was created with.
+  const saveAnswers = async (skipName: boolean) => {
     const clean = sanitizeUsername(username)
-    if (clean.length < 3) {
+    if (!skipName && clean.length < 3) {
       setNameError('Usernames need at least 3 letters or numbers.')
       return
     }
@@ -152,27 +170,54 @@ export function Onboarding({ onDone }: { onDone: (answers: OnboardingAnswers) =>
           ? saveFoodLikes(Array.from(foods)).catch((e) => console.warn('[bitescore] save food likes', e))
           : null,
       ])
-      try {
-        await saveNameAndUsername(
-          name,
-          clean,
-          customUsername === null ? () => suggestUsername(name, suffix()) : null,
-        )
-      } catch (e) {
-        if (e instanceof UsernameTakenError) {
-          setNameError(e.message)
-          return
+      if (!skipName) {
+        try {
+          await saveNameAndUsername(
+            name,
+            clean,
+            customUsername === null ? () => suggestUsername(name, suffix()) : null,
+          )
+        } catch (e) {
+          if (e instanceof UsernameTakenError) {
+            setNameError(e.message)
+            return
+          }
+          // Offline or similar: they can set it later in Edit profile.
+          console.warn('[bitescore] save name', e)
         }
-        // Offline or similar: they can set it later in Edit profile.
-        console.warn('[bitescore] save name', e)
+      } else {
+        setName('')
       }
-      const answers = { name: name.trim(), city: city.trim() }
-      await markOnboarded(answers).catch(() => {})
-      onDone(answers)
+      next()
     } finally {
       setBusy(false)
     }
   }
+
+  const complete = async () => {
+    const answers = { name: name.trim(), city: city.trim() }
+    await markOnboarded(answers).catch(() => {})
+    onDone(answers)
+  }
+
+  // The reveal: real scores around them. Nothing to show (no location or
+  // city, offline, nothing nearby) goes straight on to the paywall.
+  useEffect(() => {
+    if (step !== 'nearby') return
+    let live = true
+    setNearby('loading')
+    nearbySnapshot(city)
+      .catch(() => null)
+      .then((snap) => {
+        if (!live) return
+        if (!snap || snap.total === 0) complete()
+        else setNearby(snap)
+      })
+    return () => {
+      live = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step])
 
   const fade = {
     opacity: anim,
@@ -304,6 +349,8 @@ export function Onboarding({ onDone }: { onDone: (answers: OnboardingAnswers) =>
                 ))}
               </View>
             </>
+          ) : step === 'nearby' ? (
+            <Nearby snap={nearby} />
           ) : (
             <>
               <Text style={[styles.title, { color: c.label }]}>What should we call you?</Text>
@@ -388,11 +435,86 @@ export function Onboarding({ onDone }: { onDone: (answers: OnboardingAnswers) =>
             />
             <Skip onPress={next} />
           </>
-        ) : (
-          <Button label="Continue" disabled={!name.trim()} loading={busy} onPress={finish} />
-        )}
+        ) : step === 'name' ? (
+          <>
+            <Button label="Continue" disabled={!name.trim()} loading={busy} onPress={() => saveAnswers(false)} />
+            <Skip onPress={() => saveAnswers(true)} />
+          </>
+        ) : nearby !== 'loading' && nearby ? (
+          <Button
+            label={nearby.low.length ? 'See which ones' : 'Continue'}
+            icon={nearby.low.length ? 'lock-open' : undefined}
+            onPress={complete}
+          />
+        ) : null}
       </View>
     </KeyboardAvoidingView>
+  )
+}
+
+function Nearby({ snap }: { snap: NearbySnapshot | 'loading' | null }) {
+  const c = useTheme()
+  if (snap === 'loading' || !snap) {
+    return (
+      <View style={styles.nearbyLoading}>
+        <ActivityIndicator color={c.tint} />
+        <Text style={[styles.subtitle, { color: c.label2, textAlign: 'center' }]}>
+          Checking the places around you…
+        </Text>
+      </View>
+    )
+  }
+  const total = snap.capped ? `${snap.total}+` : String(snap.total)
+  const lowCount = snap.low.length
+  return (
+    <>
+      <Text style={[styles.title, { color: c.label }]}>
+        {lowCount
+          ? `${lowCount} ${lowCount === 1 ? 'place' : 'places'} ${snap.where} scored 2 or below`
+          : `Good news ${snap.where}`}
+      </Text>
+      <Text style={[styles.subtitle, { color: c.label2 }]}>
+        {lowCount
+          ? `Out of ${total} places within a mile. Would you know which ones?`
+          : `None of the ${total} places within a mile scored below 3.`}
+      </Text>
+      {lowCount ? (
+        <View style={[styles.card, { backgroundColor: c.card }]}>
+          {snap.low.slice(0, 3).map((r, i) => (
+            <View key={r.id} style={[styles.placeRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.separator }]}>
+              <ScoreBadge rating={r.rating_value} size={40} />
+              <View style={{ flex: 1 }}>
+                <View style={[styles.hiddenName, { backgroundColor: c.fill }]} />
+                <Text style={[styles.placeMeta, { color: c.meta }]}>
+                  {[r.business_type.split('/')[0], distanceLabel(r.distance_m)].filter(Boolean).join(' · ')}
+                </Text>
+              </View>
+              <Ionicons name="lock-closed" size={18} color={c.meta} />
+            </View>
+          ))}
+        </View>
+      ) : null}
+      {snap.best.length ? (
+        <>
+          <Text style={[styles.label, { color: c.meta }]}>TOP RATED NEARBY</Text>
+          <View style={[styles.card, { backgroundColor: c.card, marginTop: 0 }]}>
+            {snap.best.map((r, i) => (
+              <View key={r.id} style={[styles.placeRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.separator }]}>
+                <ScoreBadge rating={r.rating_value} size={40} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.placeName, { color: c.label }]} numberOfLines={1}>
+                    {r.name}
+                  </Text>
+                  <Text style={[styles.placeMeta, { color: c.meta }]}>
+                    {[r.business_type.split('/')[0], distanceLabel(r.distance_m)].filter(Boolean).join(' · ')}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </>
+      ) : null}
+    </>
   )
 }
 
@@ -479,6 +601,12 @@ const styles = StyleSheet.create({
   chip: { borderWidth: 1.5, borderRadius: 999, paddingHorizontal: 16, paddingVertical: 10 },
   chipText: { fontSize: 15, fontWeight: '600' },
   footer: { paddingHorizontal: 24, paddingTop: 8 },
+  nearbyLoading: { alignItems: 'center', paddingTop: 80, gap: 4 },
+  card: { borderRadius: 18, marginTop: 24, paddingHorizontal: 14 },
+  placeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
+  placeName: { fontSize: 16, fontWeight: '600' },
+  placeMeta: { fontSize: 13, marginTop: 3 },
+  hiddenName: { height: 14, width: '70%', borderRadius: 7 },
   secondary: { alignItems: 'center', paddingTop: 16, paddingBottom: 4 },
   secondaryText: { fontSize: 15, fontWeight: '500' },
 })

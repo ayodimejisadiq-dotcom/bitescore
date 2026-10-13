@@ -1,9 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Location from 'expo-location'
 import { supabase } from './supabase'
-import { fetchNear } from './data'
 import { lastKnownCoords } from './location'
-import { EMPTY_FILTERS, type RestaurantNear } from './types'
 
 // First-launch wizard (components/Onboarding.tsx): permissions, a few
 // questions, then the paywall. Finishing it is remembered on the device, so it
@@ -38,10 +36,10 @@ export async function getOnboardingAnswers(): Promise<OnboardingAnswers | null> 
 // What someone likes eating. Stored on their profile (migration 0033) for
 // personalising later; it does not filter the map.
 export const FOOD_OPTIONS: { key: string; label: string; emoji: string }[] = [
-  { key: 'cafe', label: 'Cafés & brunch', emoji: '☕️' },
+  { key: 'cafe', label: 'Cafés & brunch', emoji: '☕' },
   { key: 'takeaway', label: 'Takeaways', emoji: '🥡' },
   { key: 'pub', label: 'Pubs & bars', emoji: '🍺' },
-  { key: 'fine_dining', label: 'Fine dining', emoji: '🍷' },
+  { key: 'fine_dining', label: 'Fine dining', emoji: '🍽️' },
   { key: 'indian', label: 'Indian', emoji: '🍛' },
   { key: 'chinese', label: 'Chinese', emoji: '🥟' },
   { key: 'italian', label: 'Italian', emoji: '🍝' },
@@ -51,9 +49,9 @@ export const FOOD_OPTIONS: { key: string; label: string; emoji: string }[] = [
   { key: 'fish_chips', label: 'Fish & chips', emoji: '🐟' },
   { key: 'japanese', label: 'Japanese & sushi', emoji: '🍣' },
   { key: 'thai', label: 'Thai', emoji: '🍜' },
-  { key: 'caribbean', label: 'Caribbean', emoji: '🌶️' },
+  { key: 'caribbean', label: 'Caribbean', emoji: '🥥' },
   { key: 'african', label: 'African', emoji: '🍲' },
-  { key: 'middle_eastern', label: 'Middle Eastern', emoji: '🥙' },
+  { key: 'middle_eastern', label: 'Middle Eastern', emoji: '🧆' },
   { key: 'mexican', label: 'Mexican', emoji: '🌮' },
   { key: 'vegan', label: 'Vegan & veggie', emoji: '🥗' },
   { key: 'desserts', label: 'Desserts', emoji: '🍰' },
@@ -145,24 +143,29 @@ export function logOnboardingEvent(step: string): void {
     })
 }
 
+export interface TeaserPlace {
+  id: string
+  rating_value: string
+  business_type: string
+  distance_m: number
+}
+
 export interface NearbySnapshot {
-  // "near you", or the city they typed when location is off.
+  // "near you", or "in <city>" when location is off.
   where: string
   total: number
-  // restaurants_near returns at most 100 rows.
-  capped: boolean
-  // Scored 0–2, worst first.
-  low: RestaurantNear[]
-  // Nearest places scoring 5.
-  best: RestaurantNear[]
+  lowCount: number
+  // Up to 3 places scoring 0–2, worst first. No names until purchase.
+  low: TeaserPlace[]
+  // The two nearest places scoring 5, named.
+  best: (TeaserPlace & { name: string })[]
 }
 
 const NEARBY_RADIUS_M = 1609 // a mile
-const NEARBY_MAX = 100
 
-// What's around them, for the reveal just before the paywall: from the
+// What's around them, for the reveal that sits on the paywall: from the
 // phone's location if allowed, else from the city they typed. Null when
-// neither gives a place to look.
+// neither gives a place to look, or the lookup fails.
 export async function nearbySnapshot(city: string): Promise<NearbySnapshot | null> {
   let origin = await lastKnownCoords()
   let where = 'near you'
@@ -178,15 +181,28 @@ export async function nearbySnapshot(city: string): Promise<NearbySnapshot | nul
     }
   }
   if (!origin) return null
-  const rows = await fetchNear(origin, NEARBY_RADIUS_M, EMPTY_FILTERS)
-  const numeric = rows.filter((r) => r.rating_is_numeric)
-  return {
-    where,
-    total: rows.length,
-    capped: rows.length >= NEARBY_MAX,
-    low: numeric
-      .filter((r) => Number(r.rating_value) <= 2)
-      .sort((a, b) => Number(a.rating_value) - Number(b.rating_value)),
-    best: numeric.filter((r) => r.rating_value === '5').slice(0, 2),
-  }
+  const { data, error } = await supabase.rpc('nearby_teaser', {
+    origin_lng: origin.lng,
+    origin_lat: origin.lat,
+    p_radius_m: NEARBY_RADIUS_M,
+  })
+  if (error) throw error
+  const d = data as { total: number; low_count: number; low: TeaserPlace[]; best: NearbySnapshot['best'] }
+  return { where, total: Number(d.total), lowCount: Number(d.low_count), low: d.low, best: d.best }
+}
+
+// After purchase: the names behind the locked rows.
+export async function placeNames(ids: string[]): Promise<Record<string, string>> {
+  if (!ids.length) return {}
+  const { data, error } = await supabase.from('restaurants').select('id,name').in('id', ids)
+  if (error) throw error
+  return Object.fromEntries((data ?? []).map((r: { id: string; name: string }) => [r.id, r.name]))
+}
+
+// Live check for the username field. Unknown (offline, etc.) counts as
+// available; the save itself still catches a clash.
+export async function usernameAvailable(username: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc('username_available', { p_username: username })
+  if (error) return true
+  return data !== false
 }

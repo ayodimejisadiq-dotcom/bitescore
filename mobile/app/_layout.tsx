@@ -193,7 +193,16 @@ export default function RootLayout() {
           <ActivityIndicator color={c.tint} />
         </View>
       ) : showOnboarding ? (
-        <Onboarding onDone={setOnboarding} />
+        // Ends on its own reveal + pricing sheet; finishing means they bought
+        // or restored.
+        <Onboarding
+          userId={session?.user.id}
+          identityFailed={identityFailed}
+          onFinished={(done) => {
+            setOnboarding(done)
+            setEntitled(true)
+          }}
+        />
       ) : showPaywall ? (
         <PaywallGate
           userId={session?.user.id}

@@ -52,3 +52,65 @@ $$;
 
 revoke execute on function public.onboarding_funnel(int) from public, anon, authenticated;
 grant execute on function public.onboarding_funnel(int) to service_role;
+
+-- 4. The onboarding reveal (last wizard step, shown with the paywall): what's
+--    within p_radius_m of a point. Low scorers (0–2) come back WITHOUT names —
+--    scores, types and distances only — so the teaser can't be read off the
+--    response; the app looks the names up after purchase. The two nearest
+--    5-rated places are shown in full.
+create or replace function public.nearby_teaser(
+  origin_lng double precision,
+  origin_lat double precision,
+  p_radius_m double precision default 1609
+)
+returns jsonb
+language sql stable security definer
+set search_path = public
+as $$
+  with here as (
+    select r.id, r.name, r.business_type, r.rating_value, r.rating_is_numeric,
+           st_distance(r.geo, st_point(origin_lng, origin_lat)::geography) as distance_m
+    from public.restaurants r
+    where r.geo is not null
+      and st_dwithin(r.geo, st_point(origin_lng, origin_lat)::geography, least(p_radius_m, 5000))
+  ),
+  low as (
+    select * from here
+    where rating_is_numeric and rating_value in ('0', '1', '2')
+  )
+  select jsonb_build_object(
+    'total', (select count(*) from here),
+    'low_count', (select count(*) from low),
+    'low', coalesce((
+      select jsonb_agg(jsonb_build_object(
+               'id', l.id, 'rating_value', l.rating_value,
+               'business_type', l.business_type, 'distance_m', round(l.distance_m)))
+      from (select * from low order by rating_value, distance_m limit 3) l
+    ), '[]'::jsonb),
+    'best', coalesce((
+      select jsonb_agg(jsonb_build_object(
+               'id', b.id, 'name', b.name, 'rating_value', b.rating_value,
+               'business_type', b.business_type, 'distance_m', round(b.distance_m)))
+      from (select * from here where rating_value = '5' order by distance_m limit 2) b
+    ), '[]'::jsonb)
+  );
+$$;
+
+revoke execute on function public.nearby_teaser(double precision, double precision, double precision) from public, anon;
+grant execute on function public.nearby_teaser(double precision, double precision, double precision) to authenticated;
+
+-- 5. Whether a username is free, for the wizard's live check. Profiles are
+--    only readable by their owner, so this can't be a plain select.
+create or replace function public.username_available(p_username text)
+returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select not exists (
+    select 1 from public.profiles
+    where username = lower(p_username) and user_id <> auth.uid()
+  );
+$$;
+
+revoke execute on function public.username_available(text) from public, anon;
+grant execute on function public.username_available(text) to authenticated;

@@ -107,6 +107,8 @@ function isAutoRenewing(pkg: PurchasesPackage): boolean {
 function freeTrialLabel(pkg: PurchasesPackage): string | null {
   const intro = pkg.product.introPrice
   if (!intro || intro.price !== 0 || !isAutoRenewing(pkg)) return null
+  // Apple only offers "1 week", which reads better as "7-day".
+  if (intro.periodUnit === 'WEEK') return `${intro.periodNumberOfUnits * 7}-day free trial`
   const unit = intro.periodUnit.toLowerCase()
   return `${intro.periodNumberOfUnits}-${unit} free trial`
 }

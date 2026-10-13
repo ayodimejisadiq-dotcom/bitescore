@@ -1,21 +1,17 @@
 import { createContext, useContext } from 'react'
-import type { FreePlanStatus } from '@/lib/plan'
 
-// Who is on which plan, for screens below the root layout. Pro comes from the
-// store entitlement (RevenueCat); `free` is the server's allowance and usage,
-// null for Pro users or while unknown.
+// Whether this person has Pro, for screens below the root layout. Pro comes
+// from the store entitlement (RevenueCat). There is no free plan, so anyone
+// inside the app normally has it; dev builds without store keys can be in
+// without it.
 export interface PlanState {
   isPro: boolean
-  free: FreePlanStatus | null
-  setFree: (s: FreePlanStatus) => void
   // After a purchase or restore made from the in-app paywall.
   unlockPro: () => void
 }
 
 export const PlanContext = createContext<PlanState>({
   isPro: true,
-  free: null,
-  setFree: () => {},
   unlockPro: () => {},
 })
 

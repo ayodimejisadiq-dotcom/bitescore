@@ -25,7 +25,6 @@ import { registerForPushNotifications } from '@/lib/push'
 import { errorMessage } from '@/lib/errors'
 import { PRIVACY_POLICY_URL, TERMS_OF_USE_URL } from '@/lib/legal'
 import { usePlan } from '@/hooks/usePlan'
-import { freeLeft } from '@/lib/plan'
 import { useAppleSignIn } from '@/components/AppleSignIn'
 
 export default function SettingsScreen() {
@@ -178,11 +177,6 @@ export default function SettingsScreen() {
               <Row
                 title="Get Bitescore Pro"
                 titleColor={c.tint}
-                subtitle={
-                  plan.free
-                    ? `Free plan · ${freeLeft(plan.free)} of ${plan.free.free_limit} places left this month`
-                    : 'Free plan'
-                }
                 chevron
                 onPress={() => router.push('/paywall')}
               />

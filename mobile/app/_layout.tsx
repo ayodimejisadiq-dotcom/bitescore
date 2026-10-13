@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import AsyncStorage from '@react-native-async-storage/async-storage'
 import { View, ActivityIndicator, LogBox, Linking, Alert } from 'react-native'
 import { Stack, useRouter } from 'expo-router'
 import * as Notifications from 'expo-notifications'
@@ -15,8 +14,8 @@ import { routeForNotification, setupFollowUpCategory } from '@/lib/followups'
 import { handleAuthRedirect } from '@/lib/authLink'
 import { useTheme } from '@/theme/useTheme'
 import { PlanContext, type PlanState } from '@/hooks/usePlan'
-import { getFreePlanStatus, getFreeRequiresSignIn, type FreePlanStatus } from '@/lib/plan'
-import { useAppleSignIn } from '@/components/AppleSignIn'
+import { Onboarding } from '@/components/Onboarding'
+import { getOnboardingAnswers, type OnboardingAnswers } from '@/lib/onboarding'
 
 // Hold the native splash — the Bitescore logo — rather than letting it vanish
 // the instant the first frame is ready. Claimed at module scope so it happens
@@ -27,10 +26,6 @@ SplashScreen.preventAutoHideAsync().catch(() => {})
 // is slow to start. Startup work usually finishes well inside this, so in
 // practice this is the splash duration rather than a floor under a longer wait.
 const MIN_SPLASH_MS = 2000
-
-// Set once someone taps "Continue free" on the paywall, so later launches go
-// straight to the app instead of showing the paywall every time.
-const FREE_CHOSEN_KEY = 'bitescore.freeChosen.v1'
 
 // Show our own local reminders (and pushes) even while the app is open.
 Notifications.setNotificationHandler({
@@ -51,27 +46,27 @@ if (__DEV__) {
   LogBox.ignoreLogs(['Auto refresh tick failed with error'])
 }
 
+// The personal touch at the top of the paywall, from the wizard's answers.
+function readyNotice(answers: OnboardingAnswers | null): string | undefined {
+  if (!answers || (!answers.name && !answers.city)) return undefined
+  const guide = answers.city ? `Your ${answers.city} food guide is ready` : 'Your food guide is ready'
+  return answers.name ? `${answers.name}, ${guide.charAt(0).toLowerCase()}${guide.slice(1)}` : guide
+}
+
 export default function RootLayout() {
   const c = useTheme()
   const { session, loading: sessionLoading } = useSession()
   const [entitled, setEntitled] = useState<boolean | null>(null)
   const [identityFailed, setIdentityFailed] = useState(false)
-  // Only looked up for people without Pro. A failed lookup counts as no free
-  // plan, which is how the app behaved before there was one.
-  const [free, setFree] = useState<FreePlanStatus | null>(null)
-  const [freeChecked, setFreeChecked] = useState(false)
-  const [freeChosen, setFreeChosen] = useState<boolean | null>(null)
-  // The free plan can require Sign in with Apple (app_config), where the
-  // device offers it, so reinstalling doesn't hand out a fresh allowance.
-  const [freeNeedsSignIn, setFreeNeedsSignIn] = useState(false)
-  const apple = useAppleSignIn()
-  const signInRequired = freeNeedsSignIn && apple.available
+  // There is no free plan: without Pro, a new install goes through the
+  // onboarding wizard once, then the paywall. Null while still reading it.
+  const [onboarding, setOnboarding] = useState<OnboardingAnswers | 'pending' | null>(null)
   const router = useRouter()
 
   useEffect(() => {
-    AsyncStorage.getItem(FREE_CHOSEN_KEY)
-      .then((v) => setFreeChosen(v === '1'))
-      .catch(() => setFreeChosen(false))
+    getOnboardingAnswers()
+      .then((answers) => setOnboarding(answers ?? 'pending'))
+      .catch(() => setOnboarding('pending'))
   }, [])
 
   // Deep-links a tapped notification: a score-change push opens the place, a
@@ -141,29 +136,16 @@ export default function RootLayout() {
       // "you haven't bought this" from "we couldn't check".
       const identified = await loginPurchases(session.user.id)
       setIdentityFailed(!identified)
-      const pro = await getIsEntitled()
-      if (!pro) {
-        const [status, needsSignIn] = await Promise.all([
-          getFreePlanStatus().catch(() => null),
-          getFreeRequiresSignIn().catch(() => false),
-        ])
-        setFree(status)
-        setFreeNeedsSignIn(needsSignIn)
-        setFreeChecked(true)
-      }
-      setEntitled(pro)
+      setEntitled(await getIsEntitled())
     })()
   }, [session?.user.id])
 
-  const freeLimit = free?.free_limit ?? 0
   const plan = useMemo<PlanState>(
     () => ({
       isPro: entitled === true,
-      free: entitled === true ? null : free,
-      setFree,
       unlockPro: () => setEntitled(true),
     }),
-    [entitled, free],
+    [entitled],
   )
 
   const [splashHeld, setSplashHeld] = useState(true)
@@ -172,12 +154,12 @@ export default function RootLayout() {
     return () => clearTimeout(t)
   }, [])
 
-  const stillChecking =
-    sessionLoading ||
-    freeChosen === null ||
-    (session && (entitled === null || (entitled === false && (!freeChecked || !apple.ready))))
-  const onFree = freeLimit > 0 && !!freeChosen && (!signInRequired || apple.linked)
-  const showPaywall = entitled === false && !onFree
+  const stillChecking = sessionLoading || onboarding === null || (session && entitled === null)
+  const showPaywall = entitled === false
+  // Signing back in from the wizard's first screen re-reads the entitlement;
+  // a returning Pro user then skips the rest of it.
+  const showOnboarding = showPaywall && onboarding === 'pending'
+  const answers = onboarding !== 'pending' ? onboarding : null
 
   // Drop the splash only once the minimum has elapsed *and* there is something
   // real behind it — otherwise it would hand over to the spinner, which is a
@@ -194,22 +176,14 @@ export default function RootLayout() {
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: c.bg }}>
           <ActivityIndicator color={c.tint} />
         </View>
+      ) : showOnboarding ? (
+        <Onboarding onDone={setOnboarding} />
       ) : showPaywall ? (
         <PaywallGate
           userId={session?.user.id}
           identityFailed={identityFailed}
           onUnlocked={() => setEntitled(true)}
-          freeLimit={freeLimit > 0 ? freeLimit : undefined}
-          freeNeedsAppleSignIn={signInRequired && !apple.linked}
-          onContinueFree={
-            freeLimit > 0
-              ? async () => {
-                  if (signInRequired && !apple.linked && !(await apple.run())) return
-                  AsyncStorage.setItem(FREE_CHOSEN_KEY, '1').catch(() => {})
-                  setFreeChosen(true)
-                }
-              : undefined
-          }
+          notice={readyNotice(answers)}
         />
       ) : (
         <PlanContext.Provider value={plan}>

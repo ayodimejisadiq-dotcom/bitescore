@@ -22,7 +22,7 @@ import { EmailSignIn } from '@/components/EmailSignIn'
 import { confirmEmailUpgrade, deleteMyAccount, signOut, startEmailUpgrade } from '@/lib/auth'
 import { getNotificationPrefs, setNotificationPrefs } from '@/lib/data'
 import { registerForPushNotifications } from '@/lib/push'
-import { errorMessage } from '@/lib/errors'
+import { friendlyMessage } from '@/lib/errors'
 import { PRIVACY_POLICY_URL, TERMS_OF_USE_URL } from '@/lib/legal'
 import { usePlan } from '@/hooks/usePlan'
 import { useAppleSignIn } from '@/components/AppleSignIn'
@@ -59,7 +59,7 @@ export default function SettingsScreen() {
       await setNotificationPrefs(next)
     } catch (e) {
       setNotif(!next)
-      Alert.alert('Couldn’t update', errorMessage(e))
+      Alert.alert('Couldn’t update', friendlyMessage(e))
     } finally {
       setNotifBusy(false)
     }
@@ -96,7 +96,7 @@ export default function SettingsScreen() {
             try {
               await deleteMyAccount()
             } catch (e) {
-              Alert.alert('Couldn’t delete account', errorMessage(e))
+              Alert.alert('Couldn’t delete account', friendlyMessage(e))
             }
           },
         },
@@ -224,7 +224,7 @@ function EmailUpgrade() {
     try {
       await fn()
     } catch (e) {
-      setError(errorMessage(e))
+      setError(friendlyMessage(e))
     } finally {
       setBusy(false)
     }

@@ -32,7 +32,7 @@ import { LogVisitSheet } from '@/components/LogVisitSheet'
 import { DinerCheckCard } from '@/components/DinerCheckCard'
 import { InspectionHistory, showsInspectionHistory } from '@/components/InspectionHistory'
 import { categoryOne } from '@/components/RestaurantRow'
-import { isNumericRating, ratingDescription, FSA_ATTRIBUTION } from '@/lib/fsa'
+import { isNumericRating, ratingDescription, ratingLabel, FSA_ATTRIBUTION } from '@/lib/fsa'
 import {
   blockReviewAuthor,
   currentUserId,
@@ -222,7 +222,10 @@ function RestaurantDetail({ id }: { id: string }) {
 
   const onShare = () => {
     Share.share({
-      message: `${place.name} has a food hygiene rating of ${place.rating_value}/5 on Bitescore`,
+      // Unrated places read "AwaitingInspection/5" before.
+      message: isNumericRating(place.rating_value)
+        ? `${place.name} has a food hygiene rating of ${place.rating_value}/5 on Bitescore`
+        : `${place.name} on Bitescore: ${ratingLabel(place.rating_value)}`,
     }).catch(() => {})
   }
 

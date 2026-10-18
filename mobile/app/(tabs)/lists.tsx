@@ -27,7 +27,7 @@ import {
 } from '@/components/ui'
 import { NameListDialog } from '@/components/NameListDialog'
 import { createList, deleteList, fetchMyLists, leaveList, renameList } from '@/lib/data'
-import { errorMessage } from '@/lib/errors'
+import { friendlyMessage } from '@/lib/errors'
 import { shortName, joinNames } from '@/lib/people'
 import type { ListSummary } from '@/lib/types'
 
@@ -68,7 +68,7 @@ export default function ListsScreen() {
       setLists(await fetchMyLists())
       setError(null)
     } catch (e) {
-      setError(errorMessage(e))
+      setError(friendlyMessage(e))
     }
   }, [session])
 
@@ -92,7 +92,7 @@ export default function ListsScreen() {
       await load()
       router.push(`/list/${id}`)
     } catch (e) {
-      Alert.alert('Couldn’t create list', errorMessage(e))
+      Alert.alert('Couldn’t create list', friendlyMessage(e))
     }
   }
 
@@ -105,7 +105,7 @@ export default function ListsScreen() {
       await renameList(target.id, name)
       load()
     } catch (e) {
-      Alert.alert('Couldn’t rename', errorMessage(e))
+      Alert.alert('Couldn’t rename', friendlyMessage(e))
     }
   }
 
@@ -120,7 +120,7 @@ export default function ListsScreen() {
             await deleteList(l.id)
             load()
           } catch (e) {
-            Alert.alert('Couldn’t delete', errorMessage(e))
+            Alert.alert('Couldn’t delete', friendlyMessage(e))
           }
         },
       },
@@ -138,7 +138,7 @@ export default function ListsScreen() {
             await leaveList(l.id)
             load()
           } catch (e) {
-            Alert.alert('Couldn’t leave', errorMessage(e))
+            Alert.alert('Couldn’t leave', friendlyMessage(e))
           }
         },
       },

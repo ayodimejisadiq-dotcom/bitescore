@@ -29,7 +29,7 @@ import {
   retryIdentityAndEntitlement,
 } from '@/lib/purchases'
 import { PRIVACY_POLICY_URL, TERMS_OF_USE_URL } from '@/lib/legal'
-import { errorMessage } from '@/lib/errors'
+import { friendlyMessage } from '@/lib/errors'
 import { Button } from './ui'
 import { EmailSignIn } from './EmailSignIn'
 
@@ -92,7 +92,7 @@ function purchaseErrorMessage(e: unknown): string {
       return `Couldn’t reach ${STORE_NAME}. Check your connection and try again.`
     }
   }
-  return errorMessage(e)
+  return friendlyMessage(e)
 }
 
 function isAutoRenewing(pkg: PurchasesPackage): boolean {

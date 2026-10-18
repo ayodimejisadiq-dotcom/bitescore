@@ -405,13 +405,15 @@ export default function MapScreen() {
       // Postcodes with no restaurant registered at them (most homes) are
       // located by their sector, so they still land in the right streets.
       if (looksLikePostcode(text)) {
-        const point = await postcodePoint(text).catch(() => null)
+        const point = await postcodePoint(text, abort.signal).catch(() => null)
         if (id !== searchSeq.current) return
         if (point) {
           const span = POSTCODE_SPAN[point.level]
-          const near = await fetchNear({ lng: point.lng, lat: point.lat }, span.radiusM, f)
+          const near = await fetchNear({ lng: point.lng, lat: point.lat }, span.radiusM, f, abort.signal)
           if (id !== searchSeq.current) return
-          showPostcode(point, f)
+          // The map moves when they pick "Show map" or press Search, not at
+          // every pause while typing "SW1A 1AA" (which also dropped them out
+          // of follow mode each time).
           setPostcodeHit(point)
           setSearchResults(near)
           setSearchError(null)
@@ -468,8 +470,9 @@ export default function MapScreen() {
     load(region, f)
   }
 
-  // Closes the list so the map, already moved there, is in view.
+  // Moves the map to the postcode and closes the list so it's in view.
   const viewPostcodeOnMap = () => {
+    if (postcodeHit) showPostcode(postcodeHit, filters)
     if (searchQuery.trim()) rememberSearch(searchQuery)
     clearSearch()
     Keyboard.dismiss()
@@ -630,7 +633,7 @@ export default function MapScreen() {
             }}
             onSubmitEditing={() => {
               if (!searchable(searchQuery)) return
-              // A postcode's map move has already happened; Search shows it.
+              // Search on a postcode goes to it on the map.
               if (postcodeHit) {
                 viewPostcodeOnMap()
                 return
@@ -640,9 +643,9 @@ export default function MapScreen() {
             }}
             style={[styles.searchInput, { color: c.label }]}
           />
-          {searchLoading ? (
-            <ActivityIndicator size="small" color={c.meta} />
-          ) : searchQuery ? (
+          {searchLoading ? <ActivityIndicator size="small" color={c.meta} /> : null}
+          {/* Stays during loading, so a slow search can always be abandoned. */}
+          {searchQuery ? (
             <Pressable
               onPress={clearSearch}
               hitSlop={8}

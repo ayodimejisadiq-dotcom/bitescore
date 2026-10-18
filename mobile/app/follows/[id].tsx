@@ -21,17 +21,24 @@ export default function FollowsScreen() {
   const [me, setMe] = useState<string | null>(null)
   const [rows, setRows] = useState<Record<Tab, FollowRow[] | null>>({ followers: null, following: null })
   const [query, setQuery] = useState('')
+  const [failed, setFailed] = useState(false)
 
   const load = useCallback(async () => {
-    const [p, uid, followers, following] = await Promise.all([
-      getProfileSummary(id),
-      currentUserId(),
-      getFollowList(id, 'followers'),
-      getFollowList(id, 'following'),
-    ]).catch(() => [null, null, [], []] as const)
-    setProfile(p)
-    setMe(uid)
-    setRows({ followers: [...followers], following: [...following] })
+    try {
+      const [p, uid, followers, following] = await Promise.all([
+        getProfileSummary(id),
+        currentUserId(),
+        getFollowList(id, 'followers'),
+        getFollowList(id, 'following'),
+      ])
+      setProfile(p)
+      setMe(uid)
+      setRows({ followers, following })
+      setFailed(false)
+    } catch {
+      // Offline used to read as "No followers yet."
+      setFailed(true)
+    }
   }, [id])
 
   useFocusEffect(
@@ -79,7 +86,13 @@ export default function FollowsScreen() {
       </View>
       <SearchField value={query} onChangeText={setQuery} placeholder="Search" autoCapitalize="none" style={{ marginHorizontal: 16, marginBottom: 16 }} />
 
-      {list === null ? (
+      {failed && list === null ? (
+        <Pressable onPress={load} accessibilityRole="button" accessibilityLabel="Try again">
+          <Text style={[styles.empty, { color: c.meta }]}>
+            Couldn’t load. Check your connection, then tap to try again.
+          </Text>
+        </Pressable>
+      ) : list === null ? (
         <ActivityIndicator color={c.meta} style={{ marginTop: 30 }} />
       ) : filtered.length === 0 ? (
         <Text style={[styles.empty, { color: c.meta }]}>

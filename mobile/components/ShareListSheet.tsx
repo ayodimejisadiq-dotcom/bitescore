@@ -21,7 +21,7 @@ import {
   shareUrl,
   updateListSharing,
 } from '@/lib/data'
-import { errorMessage } from '@/lib/errors'
+import { friendlyMessage } from '@/lib/errors'
 import { displayName } from '@/lib/people'
 import type { FollowRow, ListAccess, ListPerson } from '@/lib/types'
 
@@ -77,7 +77,7 @@ export function ShareListSheet({
       onChange()
     } catch (e) {
       setState(prev)
-      Alert.alert('Couldn’t update sharing', errorMessage(e))
+      Alert.alert('Couldn’t update sharing', friendlyMessage(e))
     } finally {
       setBusy(false)
     }
@@ -99,7 +99,7 @@ export function ShareListSheet({
             await removeListMember(listId, p.user_id)
             onChange()
           } catch (e) {
-            Alert.alert('Couldn’t remove', errorMessage(e))
+            Alert.alert('Couldn’t remove', friendlyMessage(e))
           }
         },
       },
@@ -280,7 +280,7 @@ function InvitePicker({
                             n.delete(p.user_id)
                             return n
                           })
-                          Alert.alert('Couldn’t invite', errorMessage(e))
+                          Alert.alert('Couldn’t invite', friendlyMessage(e))
                         }
                       }}
                       style={[styles.inviteBtn, { backgroundColor: done ? c.bg : c.tint }]}

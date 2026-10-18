@@ -7,7 +7,7 @@ import { useTheme } from '@/theme/useTheme'
 import { ScoreBadge } from '@/components/ScoreBadge'
 import { Avatar, Button, EmptyState, Mosaic } from '@/components/ui'
 import { getListBySlug, joinList } from '@/lib/data'
-import { errorMessage } from '@/lib/errors'
+import { friendlyMessage } from '@/lib/errors'
 import { displayName } from '@/lib/people'
 import type { ListInvite } from '@/lib/types'
 
@@ -19,10 +19,12 @@ export default function InviteLanding() {
   const insets = useSafeAreaInsets()
   const { slug } = useLocalSearchParams<{ slug: string }>()
   const [invite, setInvite] = useState<ListInvite | null>(null)
-  const [state, setState] = useState<'loading' | 'ready' | 'missing'>('loading')
+  const [state, setState] = useState<'loading' | 'ready' | 'missing' | 'failed'>('loading')
+  const [attempt, setAttempt] = useState(0)
   const [busy, setBusy] = useState<'editor' | 'viewer' | null>(null)
 
   useEffect(() => {
+    setState('loading')
     getListBySlug(slug)
       .then((inv) => {
         if (!inv) return setState('missing')
@@ -34,8 +36,9 @@ export default function InviteLanding() {
         setInvite(inv)
         setState('ready')
       })
-      .catch(() => setState('missing'))
-  }, [slug, router])
+      // Offline is not a dead link: say so, and let them retry.
+      .catch(() => setState('failed'))
+  }, [slug, router, attempt])
 
   const close = () => (router.canGoBack() ? router.back() : router.replace('/lists'))
 
@@ -46,7 +49,7 @@ export default function InviteLanding() {
       const id = await joinList(slug, role)
       router.replace(`/list/${id}`)
     } catch (e) {
-      Alert.alert('Couldn’t join', errorMessage(e))
+      Alert.alert('Couldn’t join', friendlyMessage(e))
     } finally {
       setBusy(null)
     }
@@ -66,6 +69,13 @@ export default function InviteLanding() {
         {header}
         {state === 'loading' ? (
           <ActivityIndicator color={c.meta} style={{ marginTop: 60 }} />
+        ) : state === 'failed' ? (
+          <EmptyState
+            icon="cloud-offline-outline"
+            title="Couldn’t open this link"
+            body="Check your connection and try again."
+            action={<Button label="Try again" variant="secondary" onPress={() => setAttempt((n) => n + 1)} />}
+          />
         ) : (
           <EmptyState icon="link-outline" title="This link doesn’t work any more" body="The list may have been made private or deleted." />
         )}

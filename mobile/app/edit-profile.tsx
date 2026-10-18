@@ -16,7 +16,7 @@ import { useTheme } from '@/theme/useTheme'
 import { SectionFooter, SectionHeader } from '@/components/ui'
 import { getProfile, savePublicProfile, setUsername } from '@/lib/data'
 import { sanitizeUsername } from '@/lib/username'
-import { errorMessage } from '@/lib/errors'
+import { errorMessage, friendlyMessage } from '@/lib/errors'
 
 // What other people see. The name is optional and only what you type here —
 // your private account details never appear publicly.
@@ -57,7 +57,7 @@ export default function EditProfile() {
       const msg = errorMessage(e)
       Alert.alert(
         'Couldn’t save',
-        /duplicate|unique|23505/i.test(msg) ? `@${clean} is taken. Try another username.` : msg,
+        /duplicate|unique|23505/i.test(msg) ? `@${clean} is taken. Try another username.` : friendlyMessage(e),
       )
     } finally {
       setSaving(false)

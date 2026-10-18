@@ -22,7 +22,7 @@ import {
   profileUrl,
   unfollow,
 } from '@/lib/data'
-import { errorMessage } from '@/lib/errors'
+import { friendlyMessage } from '@/lib/errors'
 import { displayName, tierFor } from '@/lib/people'
 import type { ProfileSummary, PublicList, TasteMatch, UserReview, Verdict } from '@/lib/types'
 
@@ -42,25 +42,31 @@ export default function UserProfile() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const [profile, setProfile] = useState<ProfileSummary | null>(null)
   const [missing, setMissing] = useState(false)
+  const [failed, setFailed] = useState(false)
   const [taste, setTaste] = useState<TasteMatch | null>(null)
   const [lists, setLists] = useState<PublicList[]>([])
   const [reviews, setReviews] = useState<UserReview[]>([])
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
+    let p: ProfileSummary | null
     try {
-      const p = await getProfileSummary(id)
-      if (!p) return setMissing(true)
-      // Your own profile lives in the Profile tab.
-      if (p.is_me) return router.replace('/profile')
-      setProfile(p)
-      const [t, l, r] = await Promise.all([getTasteMatch(id), getPublicLists(id), getUserReviews(id)])
-      setTaste(t)
-      setLists(l)
-      setReviews(r)
+      p = await getProfileSummary(id)
     } catch {
-      setMissing(true)
+      // Offline, not a missing profile.
+      setFailed(true)
+      return
     }
+    setFailed(false)
+    if (!p) return setMissing(true)
+    // Your own profile lives in the Profile tab.
+    if (p.is_me) return router.replace('/profile')
+    setProfile(p)
+    // Each section fills in on its own; one failing no longer empties the rest.
+    const [t, l, r] = await Promise.allSettled([getTasteMatch(id), getPublicLists(id), getUserReviews(id)])
+    if (t.status === 'fulfilled') setTaste(t.value)
+    if (l.status === 'fulfilled') setLists(l.value)
+    if (r.status === 'fulfilled') setReviews(r.value)
   }, [id, router])
 
   useFocusEffect(
@@ -75,6 +81,13 @@ export default function UserProfile() {
         <NavBar backLabel="Back" />
         {missing ? (
           <EmptyState icon="person-outline" title="Profile not available" />
+        ) : failed ? (
+          <EmptyState
+            icon="cloud-offline-outline"
+            title="Couldn’t load this profile"
+            body="Check your connection and try again."
+            action={<Button label="Try again" variant="secondary" onPress={load} />}
+          />
         ) : (
           <ActivityIndicator color={c.meta} style={{ marginTop: 60 }} />
         )}
@@ -90,7 +103,7 @@ export default function UserProfile() {
       next ? await follow(profile.user_id) : await unfollow(profile.user_id)
     } catch (e) {
       setProfile(profile)
-      Alert.alert('Couldn’t update', errorMessage(e))
+      Alert.alert('Couldn’t update', friendlyMessage(e))
     } finally {
       setBusy(false)
     }

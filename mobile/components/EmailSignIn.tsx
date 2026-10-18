@@ -3,7 +3,7 @@ import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, Tex
 import { useTheme } from '@/theme/useTheme'
 import { Button } from './ui'
 import { sendLoginCode, verifyLoginCode } from '@/lib/auth'
-import { errorMessage } from '@/lib/errors'
+import { errorMessage, friendlyMessage } from '@/lib/errors'
 import { supabase } from '@/lib/supabase'
 
 // Sign back into an existing account (one that has an email) from an email
@@ -20,7 +20,7 @@ function friendlyError(e: unknown): string {
   }
   if (/expired|invalid/i.test(msg)) return 'That code didn’t work. Check it, or send a new one.'
   if (/rate limit|security purposes/i.test(msg)) return 'Too many tries. Wait a minute, then send a new code.'
-  return msg
+  return friendlyMessage(e)
 }
 
 export function EmailSignIn({

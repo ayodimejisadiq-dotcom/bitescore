@@ -18,8 +18,10 @@ export interface PostcodePoint {
 
 // Where a postcode is, worked out from the restaurants registered around it
 // (no outside geocoder). Null when it isn't one, or nothing is near it.
-export async function postcodePoint(q: string): Promise<PostcodePoint | null> {
-  const { data, error } = await supabase.rpc('postcode_point', { q }).maybeSingle()
+export async function postcodePoint(q: string, signal?: AbortSignal): Promise<PostcodePoint | null> {
+  let call = supabase.rpc('postcode_point', { q })
+  if (signal) call = call.abortSignal(signal)
+  const { data, error } = await call.maybeSingle()
   if (error) throw error
   return (data as PostcodePoint | null) ?? null
 }

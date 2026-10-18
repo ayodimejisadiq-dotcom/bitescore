@@ -90,14 +90,17 @@ export async function fetchNear(
   origin: { lng: number; lat: number },
   radiusM: number,
   filters: BrowseFilters,
+  signal?: AbortSignal,
 ): Promise<RestaurantNear[]> {
-  const { data, error } = await supabase.rpc('restaurants_near', {
+  let call = supabase.rpc('restaurants_near', {
     origin_lng: origin.lng,
     origin_lat: origin.lat,
     radius_m: radiusM,
     types: filters.types,
     rating_values: toRatingValues(filters),
   })
+  if (signal) call = call.abortSignal(signal)
+  const { data, error } = await call
   if (error) throw error
   return (data ?? []) as RestaurantNear[]
 }

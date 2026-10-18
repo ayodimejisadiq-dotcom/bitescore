@@ -19,7 +19,7 @@ import {
   renameList,
   shareUrl,
 } from '@/lib/data'
-import { errorMessage } from '@/lib/errors'
+import { friendlyMessage } from '@/lib/errors'
 import { lastKnownCoords } from '@/lib/location'
 import { distanceLabel, joinNames, metersBetween, shortName } from '@/lib/people'
 import type { ListDetail, ListPerson } from '@/lib/types'
@@ -40,6 +40,8 @@ export default function ListDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const [list, setList] = useState<ListDetail | null>(null)
   const [missing, setMissing] = useState(false)
+  // A failed load is not a missing list: offline used to say "deleted".
+  const [failed, setFailed] = useState(false)
   const [me, setMe] = useState<string | null>(null)
   const [here, setHere] = useState<{ lat: number; lng: number } | null>(null)
   const [adding, setAdding] = useState(false)
@@ -52,8 +54,9 @@ export default function ListDetailScreen() {
       setMe(uid)
       setList(detail)
       setMissing(!detail)
+      setFailed(false)
     } catch {
-      setMissing(true)
+      setFailed(true)
     }
   }, [id])
 
@@ -73,6 +76,13 @@ export default function ListDetailScreen() {
         <NavBar backLabel="Lists" />
         {missing ? (
           <EmptyState icon="lock-closed-outline" title="List not available" body="It may have been made private or deleted." />
+        ) : failed ? (
+          <EmptyState
+            icon="cloud-offline-outline"
+            title="Couldn’t load this list"
+            body="Check your connection and try again."
+            action={<Button label="Try again" variant="secondary" onPress={load} />}
+          />
         ) : (
           <ActivityIndicator color={c.meta} style={{ marginTop: 40 }} />
         )}
@@ -114,7 +124,7 @@ export default function ListDetailScreen() {
                   await deleteList(list.id)
                   router.back()
                 } catch (e) {
-                  Alert.alert('Couldn’t delete', errorMessage(e))
+                  Alert.alert('Couldn’t delete', friendlyMessage(e))
                 }
               },
             },
@@ -129,7 +139,7 @@ export default function ListDetailScreen() {
             await leaveList(list.id)
             router.back()
           } catch (e) {
-            Alert.alert('Couldn’t leave', errorMessage(e))
+            Alert.alert('Couldn’t leave', friendlyMessage(e))
           }
         },
       })
@@ -151,7 +161,7 @@ export default function ListDetailScreen() {
             await removeFromList(list.id, restaurantId)
             load()
           } catch (e) {
-            Alert.alert('Couldn’t remove', errorMessage(e))
+            Alert.alert('Couldn’t remove', friendlyMessage(e))
           }
         },
       },
@@ -198,7 +208,7 @@ export default function ListDetailScreen() {
                   await joinList(list.share_slug!, 'viewer')
                   load()
                 } catch (e) {
-                  Alert.alert('Couldn’t save', errorMessage(e))
+                  Alert.alert('Couldn’t save', friendlyMessage(e))
                 }
               }}
               style={{ flex: 1 }}
@@ -295,7 +305,7 @@ export default function ListDetailScreen() {
             await renameList(list.id, name)
             load()
           } catch (e) {
-            Alert.alert('Couldn’t rename', errorMessage(e))
+            Alert.alert('Couldn’t rename', friendlyMessage(e))
           }
         }}
       />

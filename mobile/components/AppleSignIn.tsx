@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Alert, StyleSheet, View, type ViewStyle } from 'react-native'
 import * as AppleAuthentication from 'expo-apple-authentication'
 import { isAppleSignInAvailable, signInWithApple } from '@/lib/appleAuth'
-import { errorMessage } from '@/lib/errors'
+import { friendlyMessage } from '@/lib/errors'
 import { useSession } from '@/hooks/useSession'
 
 // Shared state for the Sign in with Apple buttons: whether this device can
@@ -35,7 +35,7 @@ export function useAppleSignIn() {
       setJustLinked(true)
       return true
     } catch (e) {
-      Alert.alert('Couldn’t sign in with Apple', errorMessage(e))
+      Alert.alert('Couldn’t sign in with Apple', friendlyMessage(e))
       return false
     } finally {
       setBusy(false)

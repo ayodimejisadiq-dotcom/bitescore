@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -19,6 +20,7 @@ import { useSession } from '@/hooks/useSession'
 import { ensureSession } from '@/lib/auth'
 import { fetchMyLists, createList, addToList, removeFromList, listIdsContaining } from '@/lib/data'
 import { registerForPushAfterSave } from '@/lib/push'
+import { friendlyMessage } from '@/lib/errors'
 import type { ListSummary } from '@/lib/types'
 
 // Lists this person can put places in: their own, plus shared lists where
@@ -44,22 +46,26 @@ export function SaveToListModal({
   const [loading, setLoading] = useState(true)
   const [newName, setNewName] = useState('')
   const [creating, setCreating] = useState(false)
+  // A failed load used to look like having no lists at all.
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     if (!visible || !session) return
     ;(async () => {
       setLoading(true)
+      setLoadFailed(false)
       try {
         const mine = (await fetchMyLists()).filter(canAddTo)
         setLists(mine)
         setChecked(await listIdsContaining(restaurantId, mine.map((l) => l.id)))
       } catch {
-        /* leave empty; row taps will just no-op */
+        setLoadFailed(true)
       } finally {
         setLoading(false)
       }
     })()
-  }, [visible, session, restaurantId])
+  }, [visible, session, restaurantId, attempt])
 
   const toggle = async (listId: string) => {
     const prev = checked
@@ -75,8 +81,9 @@ export function SaveToListModal({
         // Saving is when score-change alerts make sense, so ask here.
         void registerForPushAfterSave()
       }
-    } catch {
+    } catch (e) {
       setChecked(prev)
+      Alert.alert(was ? 'Couldn’t remove' : 'Couldn’t save', friendlyMessage(e))
     }
   }
 
@@ -90,8 +97,9 @@ export function SaveToListModal({
       setNewName('')
       setLists((await fetchMyLists()).filter(canAddTo))
       setChecked((p) => new Set(p).add(id))
-    } catch {
-      /* keep the name so they can retry */
+    } catch (e) {
+      // The name stays in the box so they can retry.
+      Alert.alert('Couldn’t create the list', friendlyMessage(e))
     } finally {
       setCreating(false)
     }
@@ -116,6 +124,12 @@ export function SaveToListModal({
             </Pressable>
           ) : loading ? (
             <ActivityIndicator color={c.meta} style={{ marginVertical: 28 }} />
+          ) : loadFailed ? (
+            <Pressable onPress={() => setAttempt((n) => n + 1)} style={{ padding: 24 }}>
+              <Text style={{ color: c.tint, fontSize: 16, textAlign: 'center' }}>
+                Couldn’t load your lists. Tap to try again.
+              </Text>
+            </Pressable>
           ) : (
             <ScrollView style={{ maxHeight: 360 }} keyboardShouldPersistTaps="handled">
               {lists.length ? (

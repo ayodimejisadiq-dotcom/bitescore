@@ -172,7 +172,11 @@ export default function SettingsScreen() {
           <SectionHeader style={{ paddingTop: 24 }}>Subscription</SectionHeader>
           <GroupedCard>
             {plan.isPro ? (
-              <Row title="Manage subscription" chevron onPress={() => RevenueCatUI.presentCustomerCenter()} />
+              <Row
+                title="Manage subscription"
+                chevron
+                onPress={() => RevenueCatUI.presentCustomerCenter().finally(plan.recheckPro)}
+              />
             ) : (
               <Row
                 title="Get Bitescore Pro"

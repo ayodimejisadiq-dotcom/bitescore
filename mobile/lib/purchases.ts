@@ -1,5 +1,6 @@
 import { Platform } from 'react-native'
 import Purchases, {
+  INTRO_ELIGIBILITY_STATUS,
   LOG_LEVEL,
   type CustomerInfo,
   type PurchasesOffering,
@@ -82,8 +83,17 @@ export async function loginPurchases(userId: string): Promise<boolean> {
   return false
 }
 
+// Cancelling a free trial ends access straight away. The store would keep the
+// trial running to its end date (and RevenueCat reports it active until then),
+// so this is our rule on top: a trial with auto-renew switched off is over.
+// Only trials: a cancelled paid plan keeps access to the end of what was paid.
+function isCancelledTrial(info: CustomerInfo): boolean {
+  const ent = info.entitlements.active[ENTITLEMENT_ID]
+  return !!ent && ent.periodType === 'TRIAL' && ent.unsubscribeDetectedAt !== null
+}
+
 function isEntitledFrom(info: CustomerInfo): boolean {
-  return typeof info.entitlements.active[ENTITLEMENT_ID] !== 'undefined'
+  return typeof info.entitlements.active[ENTITLEMENT_ID] !== 'undefined' && !isCancelledTrial(info)
 }
 
 // True only when configure() actually ran with a key. Screens use this to
@@ -111,6 +121,33 @@ export async function getIsEntitled(): Promise<boolean> {
   }
 }
 
+// For re-checks while the app is open. Fetches fresh rather than trusting the
+// SDK's cache, so a trial cancelled in Settings shows up on return. Null when
+// the answer can't be trusted (identity not confirmed, offline, SDK error), so
+// a failed read never locks a paying person out mid-session.
+export async function readIsEntitled(): Promise<boolean | null> {
+  if (!configured || !identityConfirmed) return null
+  try {
+    await Purchases.invalidateCustomerInfoCache()
+    return isEntitledFrom(await Purchases.getCustomerInfo())
+  } catch {
+    return null
+  }
+}
+
+// Calls back whenever RevenueCat has newer customer info for this person.
+// Returns the unsubscribe.
+export function onEntitlementChange(callback: (entitled: boolean) => void): () => void {
+  if (!configured) return () => {}
+  const listener = (info: CustomerInfo) => {
+    if (identityConfirmed) callback(isEntitledFrom(info))
+  }
+  Purchases.addCustomerInfoUpdateListener(listener)
+  return () => {
+    Purchases.removeCustomerInfoUpdateListener(listener)
+  }
+}
+
 // Re-attempts identity, then re-reads entitlement. Used by the paywall's
 // retry, so someone locked out by a failed login at launch has a way back
 // without reinstalling.
@@ -129,6 +166,26 @@ export async function getStorefrontCountry(): Promise<string | null> {
   }
 }
 
+// Product ids whose free trial this person can't get, because they've already
+// had one. The product's introPrice says what the offer is, not whether they
+// can have it. iOS only: Google Play already leaves out offers someone isn't
+// eligible for. Empty when the check fails or can't tell, so a new customer
+// never loses the trial label by mistake; Apple's purchase sheet shows the
+// real terms either way.
+export async function getUsedTrialProductIds(productIds: string[]): Promise<Set<string>> {
+  if (Platform.OS !== 'ios' || productIds.length === 0) return new Set()
+  try {
+    const eligibility = await Purchases.checkTrialOrIntroductoryPriceEligibility(productIds)
+    return new Set(
+      Object.entries(eligibility)
+        .filter(([, e]) => e.status === INTRO_ELIGIBILITY_STATUS.INTRO_ELIGIBILITY_STATUS_INELIGIBLE)
+        .map(([id]) => id),
+    )
+  } catch {
+    return new Set()
+  }
+}
+
 export async function getOfferings(): Promise<PurchasesOffering | null> {
   const offerings = await Purchases.getOfferings()
   return offerings.current
@@ -139,7 +196,16 @@ export async function purchasePackage(pkg: PurchasesPackage): Promise<boolean> {
   return isEntitledFrom(customerInfo)
 }
 
-export async function restorePurchases(): Promise<boolean> {
+// 'cancelledTrial' is someone with a trial they cancelled: there is a purchase,
+// it just no longer gives access, so "nothing to restore" would be wrong.
+export async function restorePurchases(): Promise<'pro' | 'cancelledTrial' | 'none'> {
   const info = await Purchases.restorePurchases()
-  return isEntitledFrom(info)
+  if (isEntitledFrom(info)) return 'pro'
+  return isCancelledTrial(info) ? 'cancelledTrial' : 'none'
+}
+
+// The store's own subscription page, where a cancelled trial can be turned
+// back on.
+export async function showManageSubscriptions(): Promise<void> {
+  await Purchases.showManageSubscriptions()
 }

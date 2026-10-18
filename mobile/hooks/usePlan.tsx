@@ -8,11 +8,15 @@ export interface PlanState {
   isPro: boolean
   // After a purchase or restore made from the in-app paywall.
   unlockPro: () => void
+  // Re-reads the entitlement now, e.g. after Manage subscription, where a
+  // trial may just have been cancelled. Sends them to the paywall if so.
+  recheckPro: () => void
 }
 
 export const PlanContext = createContext<PlanState>({
   isPro: true,
   unlockPro: () => {},
+  recheckPro: () => {},
 })
 
 export function usePlan(): PlanState {

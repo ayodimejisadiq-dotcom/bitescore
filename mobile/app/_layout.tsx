@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { View, ActivityIndicator, LogBox, Linking, Alert } from 'react-native'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { View, ActivityIndicator, LogBox, Linking, Alert, AppState } from 'react-native'
 import { Stack, useRouter } from 'expo-router'
 import * as Notifications from 'expo-notifications'
 import * as Updates from 'expo-updates'
@@ -8,7 +8,13 @@ import { StatusBar } from 'expo-status-bar'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { ensureSession } from '@/lib/auth'
 import { useSession } from '@/hooks/useSession'
-import { configurePurchases, loginPurchases, getIsEntitled } from '@/lib/purchases'
+import {
+  configurePurchases,
+  loginPurchases,
+  getIsEntitled,
+  readIsEntitled,
+  onEntitlementChange,
+} from '@/lib/purchases'
 import { PaywallGate } from '@/components/PaywallGate'
 import { routeForNotification, setupFollowUpCategory } from '@/lib/followups'
 import { handleAuthRedirect } from '@/lib/authLink'
@@ -148,12 +154,36 @@ export default function RootLayout() {
     })()
   }, [session?.user.id])
 
+  // Launch isn't the only check: someone who cancels their free trial, or
+  // whose plan lapses, while the app sits open or in the background is sent to
+  // the paywall on their next return to it, not on some later cold start.
+  // These only ever take access away; granting stays with launch and the
+  // paywall's own purchase/restore.
+  const recheckPro = useCallback(async () => {
+    if ((await readIsEntitled()) === false) setEntitled(false)
+  }, [])
+
+  useEffect(() => {
+    if (entitled !== true) return
+    const appState = AppState.addEventListener('change', (state) => {
+      if (state === 'active') recheckPro()
+    })
+    const stopListening = onEntitlementChange((now) => {
+      if (!now) setEntitled(false)
+    })
+    return () => {
+      appState.remove()
+      stopListening()
+    }
+  }, [entitled, recheckPro])
+
   const plan = useMemo<PlanState>(
     () => ({
       isPro: entitled === true,
       unlockPro: () => setEntitled(true),
+      recheckPro,
     }),
-    [entitled],
+    [entitled, recheckPro],
   )
 
   const [splashHeld, setSplashHeld] = useState(true)

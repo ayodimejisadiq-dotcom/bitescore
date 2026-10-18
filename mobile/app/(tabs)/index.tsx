@@ -26,7 +26,7 @@ import { isNumericRating } from '@/lib/fsa'
 import { fetchPins, fetchClusters, fetchNear, searchRestaurants, type Bounds } from '@/lib/data'
 import { looksLikePostcode, postcodePoint, POSTCODE_SPAN, type PostcodePoint } from '@/lib/postcode'
 import { isSupabaseConfigured } from '@/lib/supabase'
-import { errorMessage, searchErrorMessage } from '@/lib/errors'
+import { searchErrorMessage } from '@/lib/errors'
 import { RestaurantRow, categoryOne } from '@/components/RestaurantRow'
 import {
   addRecentSearch,
@@ -179,6 +179,15 @@ const ClusterMarker = memo(
     a.tracking === b.tracking,
 )
 
+// Names need 3 letters before the server can match them; shorter text only
+// matched postcode prefixes ("n" listed North London) or nothing at all
+// ("pi" on the way to "pizza" said "No places found"). Postcodes such as
+// "E1" are short but complete, so they still search.
+function searchable(text: string): boolean {
+  const q = text.trim()
+  return q.length >= 3 || (q.length > 0 && looksLikePostcode(q))
+}
+
 export default function MapScreen() {
   const c = useTheme()
   const router = useRouter()
@@ -264,8 +273,13 @@ export default function MapScreen() {
     } catch (e) {
       if (requestId !== latestRequest.current) return
       // Previously swallowed, which made a misconfigured build look identical
-      // to an area with no venues. Surface it.
-      setPinError(errorMessage(e))
+      // to an area with no venues. Surface it, in words people can act on;
+      // the database's own wording goes to the log.
+      console.warn('[bitescore] map load failed', e)
+      setPinError('Check your connection and try again.')
+      // This area never loaded, so the next small pan (or Try again) must
+      // fetch it rather than count it as done.
+      loadedRegion.current = null
     } finally {
       if (requestId === latestRequest.current) setLoading(false)
     }
@@ -406,9 +420,15 @@ export default function MapScreen() {
       }
       setPostcodeHit(null)
 
+      // Without a location fix (refused, or not back yet) search around what
+      // the map shows, not alphabetically across the whole country.
+      const origin = originRef.current ?? {
+        lng: regionRef.current.longitude,
+        lat: regionRef.current.latitude,
+      }
       let results: RestaurantNear[]
       try {
-        results = await searchRestaurants(text, f, originRef.current, abort.signal)
+        results = await searchRestaurants(text, f, origin, abort.signal)
       } catch (first) {
         if (id !== searchSeq.current) return
         // One quiet retry: a dropped connection or a slow first query on a
@@ -418,7 +438,7 @@ export default function MapScreen() {
         searchAbort.current = again
         clearTimeout(timer)
         setTimeout(() => again.abort(), 8000)
-        results = await searchRestaurants(text, f, originRef.current, again.signal)
+        results = await searchRestaurants(text, f, origin, again.signal)
       }
       if (id !== searchSeq.current) return
       setSearchResults(results)
@@ -458,14 +478,19 @@ export default function MapScreen() {
   const onSearchChange = (text: string) => {
     setSearchQuery(text)
     setSearchError(null)
-    if (!text.trim()) {
-      cancelSearch()
+    // The postcode header belongs to the query that found it, and Search on
+    // the keyboard would otherwise act on it instead of the new text.
+    setPostcodeHit(null)
+    // Drops any search still in flight: its answer is for older text.
+    cancelSearch()
+    if (!searchable(text)) {
       setSearchResults([])
       return
     }
-    if (searchDebounce.current) clearTimeout(searchDebounce.current)
     // Previous results stay on screen until the new ones arrive, so the list
-    // doesn't flash empty on every keystroke.
+    // doesn't flash empty on every keystroke. Loading starts now rather than
+    // after the debounce, or "No places found" shows while the user types.
+    setSearchLoading(true)
     searchDebounce.current = setTimeout(() => runSearch(text), 300)
   }
 
@@ -554,7 +579,7 @@ export default function MapScreen() {
     setFilters(next)
     load(regionRef.current, next)
     // Open search results follow the filters too, not just the map.
-    if (searchQuery.trim()) runSearch(searchQuery, next)
+    if (searchable(searchQuery)) runSearch(searchQuery, next)
   }
 
   // The tab bar floats over the map; controls sit just above it.
@@ -604,7 +629,7 @@ export default function MapScreen() {
               blurTimer.current = setTimeout(() => setSearchFocused(false), 200)
             }}
             onSubmitEditing={() => {
-              if (!searchQuery.trim()) return
+              if (!searchable(searchQuery)) return
               // A postcode's map move has already happened; Search shows it.
               if (postcodeHit) {
                 viewPostcodeOnMap()
@@ -669,7 +694,11 @@ export default function MapScreen() {
                   ) : null
                 }
                 ListEmptyComponent={
-                  !searchLoading && !postcodeHit ? (
+                  !searchable(searchQuery) ? (
+                    <Text style={[styles.noResults, { color: c.meta }]}>
+                      Keep typing: enter at least 3 letters of a name, or a postcode.
+                    </Text>
+                  ) : !searchLoading && !postcodeHit ? (
                     <Text style={[styles.noResults, { color: c.meta }]}>
                       No places found. New places can take a few weeks to appear after the council
                       registers them.
@@ -742,10 +771,16 @@ export default function MapScreen() {
             </Text>
           </View>
         ) : pinError ? (
-          <View style={styles.banner}>
+          <Pressable
+            style={styles.banner}
+            onPress={() => load(regionRef.current, filters)}
+            accessibilityRole="button"
+            accessibilityLabel="Load ratings again"
+          >
             <Text style={[styles.bannerTitle, { color: c.label }]}>Couldn't load ratings</Text>
             <Text style={[styles.bannerBody, { color: c.label2 }]}>{pinError}</Text>
-          </View>
+            <Text style={[styles.retry, { color: c.tint }]}>Try again</Text>
+          </Pressable>
         ) : emptyHere ? (
           <View style={styles.banner}>
             <Text style={[styles.bannerTitle, { color: c.label }]}>Nothing rated here yet</Text>

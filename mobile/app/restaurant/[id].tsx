@@ -116,18 +116,32 @@ function RestaurantDetail({ id }: { id: string }) {
     setLoadError(false)
     ;(async () => {
       try {
-        const [p, r, mine, uid] = await Promise.all([getRestaurant(id), getReviews(id), getMyReview(id), currentUserId()])
+        // Only the place itself is essential. Reviews failing leave an empty
+        // reviews section, not a "Couldn't load this place" page.
+        const [p, r, mine, uid] = await Promise.all([
+          getRestaurant(id),
+          getReviews(id).catch(() => []),
+          getMyReview(id).catch(() => null),
+          currentUserId(),
+        ])
         setPlace(p)
         setReviews(r)
         setMyReview(mine)
         setMe(uid)
         setHours(p?.hours_cache ?? null)
         setGoogle({ rating: p?.google_rating ?? null, count: p?.google_rating_count ?? null })
+        // Extras fill in after the page shows: waiting on them held the
+        // spinner for a GPS fix (seconds, indoors), and a failure blanked a
+        // page that had already loaded.
         const authors = r.map((rv) => rv.user_id).filter((u): u is string => !!u && u !== uid)
-        setFollowing(await followingSet(Array.from(new Set(authors))))
+        followingSet(Array.from(new Set(authors))).then(setFollowing).catch(() => {})
         if (p?.lat != null && p?.lng != null) {
-          const here = await lastKnownCoords()
-          if (here) setDistance(metersBetween(here, { lat: p.lat, lng: p.lng }))
+          const at = { lat: p.lat, lng: p.lng }
+          lastKnownCoords()
+            .then((here) => {
+              if (here) setDistance(metersBetween(here, at))
+            })
+            .catch(() => {})
         }
       } catch {
         setLoadError(true)

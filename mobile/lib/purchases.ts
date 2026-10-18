@@ -1,5 +1,6 @@
 import { Platform } from 'react-native'
 import Purchases, {
+  INTRO_ELIGIBILITY_STATUS,
   LOG_LEVEL,
   type CustomerInfo,
   type PurchasesOffering,
@@ -162,6 +163,26 @@ export async function getStorefrontCountry(): Promise<string | null> {
     return (await Purchases.getStorefront())?.countryCode ?? null
   } catch {
     return null
+  }
+}
+
+// Product ids whose free trial this person can't get, because they've already
+// had one. The product's introPrice says what the offer is, not whether they
+// can have it. iOS only: Google Play already leaves out offers someone isn't
+// eligible for. Empty when the check fails or can't tell, so a new customer
+// never loses the trial label by mistake; Apple's purchase sheet shows the
+// real terms either way.
+export async function getUsedTrialProductIds(productIds: string[]): Promise<Set<string>> {
+  if (Platform.OS !== 'ios' || productIds.length === 0) return new Set()
+  try {
+    const eligibility = await Purchases.checkTrialOrIntroductoryPriceEligibility(productIds)
+    return new Set(
+      Object.entries(eligibility)
+        .filter(([, e]) => e.status === INTRO_ELIGIBILITY_STATUS.INTRO_ELIGIBILITY_STATUS_INELIGIBLE)
+        .map(([id]) => id),
+    )
+  } catch {
+    return new Set()
   }
 }
 

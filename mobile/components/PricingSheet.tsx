@@ -23,6 +23,7 @@ import { useTheme } from '@/theme/useTheme'
 import {
   getOfferings,
   getStorefrontCountry,
+  getUsedTrialProductIds,
   purchasePackage,
   restorePurchases,
   showManageSubscriptions,
@@ -103,11 +104,13 @@ function isAutoRenewing(pkg: PurchasesPackage): boolean {
   )
 }
 
-// "7-day free trial" when the product carries a free intro offer, else null.
-// Paid intro offers are ignored — they'd need their own pricing copy.
-function freeTrialLabel(pkg: PurchasesPackage): string | null {
+// "7-day free trial" when the product carries a free intro offer this person
+// can still get, else null. Paid intro offers are ignored — they'd need their
+// own pricing copy.
+function freeTrialLabel(pkg: PurchasesPackage, usedTrials: Set<string>): string | null {
   const intro = pkg.product.introPrice
   if (!intro || intro.price !== 0 || !isAutoRenewing(pkg)) return null
+  if (usedTrials.has(pkg.product.identifier)) return null
   // Apple only offers "1 week", which reads better as "7-day".
   if (intro.periodUnit === 'WEEK') return `${intro.periodNumberOfUnits * 7}-day free trial`
   const unit = intro.periodUnit.toLowerCase()
@@ -196,6 +199,7 @@ export function PricingSheet({
   const c = useTheme()
   const insets = useSafeAreaInsets()
   const [packages, setPackages] = useState<PurchasesPackage[] | null>(null)
+  const [usedTrials, setUsedTrials] = useState<Set<string>>(() => new Set())
   const [fmt, setFmt] = useState<PriceFormatter>(() => makePriceFormatter(null))
   const [loadError, setLoadError] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
@@ -226,6 +230,9 @@ export function PricingSheet({
         setLoadError(PLANS_UNAVAILABLE)
         return
       }
+      // Before showing the plans, so a "free trial" badge never flashes up
+      // for someone who has already had theirs.
+      setUsedTrials(await getUsedTrialProductIds(pkgs.map((p) => p.product.identifier)))
       setPackages(pkgs)
       setSelected((prev) => prev ?? pkgs[0].identifier)
     } catch (e) {
@@ -238,7 +245,7 @@ export function PricingSheet({
   }, [load])
 
   const selectedPkg = packages?.find((p) => p.identifier === selected) ?? null
-  const selectedTrial = selectedPkg ? freeTrialLabel(selectedPkg) : null
+  const selectedTrial = selectedPkg ? freeTrialLabel(selectedPkg, usedTrials) : null
 
   const onBuy = async () => {
     if (!selectedPkg || buying) return
@@ -304,7 +311,7 @@ export function PricingSheet({
         <View style={styles.plans}>
           {packages!.map((pkg) => {
             const active = pkg.identifier === selected
-            const trial = freeTrialLabel(pkg)
+            const trial = freeTrialLabel(pkg, usedTrials)
             // Lifetime carries "Best value" (at £19.99 once vs £9.99/yr it
             // wins after two years); a free trial outranks it wherever one
             // exists.

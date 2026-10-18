@@ -25,6 +25,7 @@ import {
   getStorefrontCountry,
   purchasePackage,
   restorePurchases,
+  showManageSubscriptions,
   isPurchasesConfigured,
   retryIdentityAndEntitlement,
 } from '@/lib/purchases'
@@ -264,8 +265,18 @@ export function PricingSheet({
         onUnlocked()
         return
       }
-      if (await restorePurchases()) {
+      const restored = await restorePurchases()
+      if (restored === 'pro') {
         onUnlocked()
+      } else if (restored === 'cancelledTrial') {
+        Alert.alert(
+          'Your free trial was cancelled',
+          'Turn it back on in your subscriptions, then come back and tap Restore.',
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'Open subscriptions', onPress: () => showManageSubscriptions().catch(() => {}) },
+          ],
+        )
       } else {
         Alert.alert('Nothing to restore', `No previous purchase was found for this ${STORE_ACCOUNT}.`)
       }

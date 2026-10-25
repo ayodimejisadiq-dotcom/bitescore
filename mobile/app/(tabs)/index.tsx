@@ -574,8 +574,11 @@ export default function MapScreen() {
       Math.abs(region.latitudeDelta - base.latitudeDelta) > base.latitudeDelta / 10
     if (!moved) return
 
+    // This event already waits for the map to settle, so the debounce only has
+    // to absorb back-to-back camera steps in follow mode; anything longer is
+    // dead time before new pins appear.
     if (debounce.current) clearTimeout(debounce.current)
-    debounce.current = setTimeout(() => load(region, filters), 400)
+    debounce.current = setTimeout(() => load(region, filters), 150)
   }
 
   const onFilters = (next: BrowseFilters) => {
